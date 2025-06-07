@@ -39,7 +39,7 @@ cd Simple-ToDo
 ### アクセス
 
 - **URL**: http://localhost:3000
-- **デモアカウント**: test@example.com / test123
+- **アカウント作成**: http://localhost:3000/auth/signup
 
 ## 🛠️ 便利なコマンド
 
@@ -67,14 +67,14 @@ docker volume rm simple-todo_postgres_data
 docker compose up -d
 ```
 
-### ログインできない場合
+### ユーザー管理
 
 ```bash
 # ユーザーが作成されているか確認
 ./scripts/debug-users.sh
 
-# 手動でテストユーザーを作成
-docker compose exec app npm run seed
+# 新しいアカウントを作成
+# http://localhost:3000/auth/signup にアクセス
 ```
 
 ## 📚 詳細情報

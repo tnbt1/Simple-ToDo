@@ -32,5 +32,5 @@ user_count=$(docker compose exec postgres psql -U todouser -d todoapp -t -c "SEL
 echo "Total users: $user_count"
 
 echo ""
-echo "🔧 If test user is missing, run:"
-echo "docker compose exec app npm run seed"
+echo "🔧 To create a new user, visit:"
+echo "http://localhost:3000/auth/signup"
