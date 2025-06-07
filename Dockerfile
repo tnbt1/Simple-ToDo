@@ -67,6 +67,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/
 # Copy package.json for npx commands
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
+# Make startup script executable before switching user
+RUN chmod +x ./scripts/start-app.sh
+
 USER nextjs
 
 EXPOSE 3000
@@ -74,8 +77,5 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-# Make startup script executable
-RUN chmod +x ./scripts/start-app.sh
-
-# Start the application with database initialization
-CMD ["./scripts/start-app.sh"]
+# Default command (overridden by docker-compose.yml)
+CMD ["node", "server.js"]
