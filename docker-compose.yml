@@ -94,8 +94,6 @@ services:
         npx prisma migrate deploy;
         echo '🔧 Generating Prisma client...';
         npx prisma generate;
-        echo '🌱 Checking database seed...';
-        npm run seed;
         echo '🎉 Database setup complete!';
         echo '🚀 Starting Next.js application...';
         node server.js

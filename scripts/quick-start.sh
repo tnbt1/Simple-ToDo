@@ -242,24 +242,8 @@ else
     startup_errors=true
 fi
 
-# Check test user creation
-echo "👤 Verifying test user creation..."
-sleep 2  # Wait for seed to complete
-user_check=$(docker compose exec postgres psql -U todouser -d todoapp -t -c 'SELECT COUNT(*) FROM "User" WHERE email = '\''test@example.com'\'';' 2>/dev/null | xargs)
-if [ "$user_check" = "1" ]; then
-    echo "✅ Test user (test@example.com) is available"
-else
-    echo "⚠️  Test user not found, creating manually..."
-    docker compose exec app npm run seed > /dev/null 2>&1
-    # Verify again
-    user_check_retry=$(docker compose exec postgres psql -U todouser -d todoapp -t -c 'SELECT COUNT(*) FROM "User" WHERE email = '\''test@example.com'\'';' 2>/dev/null | xargs)
-    if [ "$user_check_retry" = "1" ]; then
-        echo "✅ Test user created successfully"
-    else
-        echo "❌ Failed to create test user"
-        startup_errors=true
-    fi
-fi
+# Database setup is complete - users can be created via signup
+echo "✅ Database is ready for user registration"
 
 # Verify application is responding
 echo "🌐 Testing application response..."
@@ -304,7 +288,7 @@ fi
 # Show final access information
 echo "📋 Access Information:"
 echo "🌐 Application URL: http://localhost:3000"
-echo "👤 Demo Account: test@example.com / test123"
+echo "👤 Create Account: http://localhost:3000/auth/signup"
 echo ""
 echo "📝 Useful Commands:"
 echo "  make logs        # View all logs"
