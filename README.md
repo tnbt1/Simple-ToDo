@@ -1,0 +1,73 @@
+# Todo App
+
+Next.js 15、TypeScript、PostgreSQLで構築されたモダンなTodoアプリケーションです。
+
+## ✨ 主な機能
+
+- ✅ 優先度レベル付きタスク管理
+- 🔐 ユーザー認証 (NextAuth.js)
+- 🎨 グラスモーフィズム効果を使ったモダンUI
+- 📱 レスポンシブデザイン・ダークモード対応
+- 🐳 Docker Compose による簡単デプロイ
+
+## 🚀 クイックスタート
+
+### 必要な環境
+- Docker
+- Docker Compose
+
+### セットアップ
+
+1. **リポジトリをクローン**
+```bash
+git clone https://github.com/tnbt1/Simple-ToDo.git
+cd Simple-ToDo
+```
+
+2. **ワンコマンドで起動**
+```bash
+./scripts/quick-start.sh
+```
+
+これだけです！スクリプトが以下を自動で行います：
+- ✅ 環境設定
+- 🔑 セキュアキー生成
+- 🔧 システム最適化
+- 🚀 アプリケーション起動
+- 🔍 ヘルスチェック
+
+### アクセス
+
+- **URL**: http://localhost:3000
+- **デモアカウント**: test@example.com / test123
+
+## 🛠️ 便利なコマンド
+
+```bash
+make up          # サービス起動
+make down        # サービス停止
+make logs        # ログ表示
+make health      # ヘルスチェック
+make restart     # 再起動
+```
+
+## 🔧 トラブルシューティング
+
+### ログインできない場合
+
+```bash
+# ユーザーが作成されているか確認
+./scripts/debug-users.sh
+
+# 手動でテストユーザーを作成
+docker compose exec app npm run seed
+```
+
+## 📚 詳細情報
+
+- **詳細なセットアップ手順**: [DEPLOYMENT.md](DEPLOYMENT.md)
+- **技術スタック**: Next.js 15, PostgreSQL, Redis, Docker
+
+## 📄 ライセンス
+
+MIT License
