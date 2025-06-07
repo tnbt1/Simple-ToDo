@@ -53,6 +53,20 @@ make restart     # 再起動
 
 ## 🔧 トラブルシューティング
 
+### PostgreSQL認証エラー
+
+別サーバーでgit clone後に認証エラーが発生する場合：
+
+```bash
+# 自動修復（quick-start.shで対応済み）
+./scripts/quick-start.sh
+
+# 手動修復
+docker compose down
+docker volume rm simple-todo_postgres_data
+docker compose up -d
+```
+
 ### ログインできない場合
 
 ```bash

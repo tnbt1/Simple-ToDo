@@ -137,6 +137,23 @@ echo ""
 echo "🚀 Step 5: Starting Application"
 echo "==============================="
 
+# Check for potential PostgreSQL authentication issues
+echo "🔍 Checking for potential database conflicts..."
+existing_volumes=$(docker volume ls -q | grep postgres_data || true)
+if [ ! -z "$existing_volumes" ]; then
+    echo "⚠️  Existing PostgreSQL volumes detected:"
+    echo "$existing_volumes"
+    echo ""
+    echo "💡 This can cause authentication errors if passwords don't match"
+    read -p "🗑️  Remove existing PostgreSQL volumes to prevent auth errors? (Y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo "🗑️  Removing existing PostgreSQL volumes..."
+        echo "$existing_volumes" | xargs -r docker volume rm
+        echo "✅ PostgreSQL volumes cleaned"
+    fi
+fi
+
 # Start the application
 echo "🐳 Starting Docker containers..."
 docker compose up -d
@@ -171,7 +188,38 @@ if docker compose exec postgres pg_isready -U todouser -d todoapp > /dev/null 2>
     echo "✅ Database connection successful"
 else
     echo "❌ Database connection failed"
-    startup_errors=true
+    
+    # Check for authentication errors in PostgreSQL logs
+    echo "🔍 Checking for authentication errors..."
+    if docker compose logs postgres 2>/dev/null | grep -i "password authentication failed" > /dev/null 2>&1; then
+        echo "⚠️  PostgreSQL authentication error detected!"
+        echo "🔧 This is usually caused by existing volumes with different credentials"
+        echo ""
+        read -p "🛠️  Automatically fix by resetting PostgreSQL volume? (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo "🛑 Stopping containers..."
+            docker compose down
+            echo "🗑️  Removing PostgreSQL volume..."
+            docker volume rm simple-todo_postgres_data 2>/dev/null || true
+            echo "🚀 Restarting with clean database..."
+            docker compose up -d
+            echo "⏳ Waiting for database to initialize..."
+            sleep 30
+            
+            # Test connection again
+            if docker compose exec postgres pg_isready -U todouser -d todoapp > /dev/null 2>&1; then
+                echo "✅ Database connection restored!"
+            else
+                echo "❌ Database connection still failed"
+                startup_errors=true
+            fi
+        else
+            startup_errors=true
+        fi
+    else
+        startup_errors=true
+    fi
 fi
 
 # Check Redis
