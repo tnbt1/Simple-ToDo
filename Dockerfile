@@ -65,9 +65,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/
 # Copy package.json for npx commands
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
-# Make startup script executable before switching user
-RUN chmod +x ./scripts/start-app.sh
-
 USER nextjs
 
 EXPOSE 3000
