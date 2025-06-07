@@ -39,7 +39,8 @@ cd Simple-ToDo
 ### アクセス
 
 - **URL**: http://localhost:3000
-- **アカウント作成**: http://localhost:3000/auth/signup
+- **テストアカウント**: test@example.com / test123 (初回起動時に自動作成)
+- **新規アカウント作成**: http://localhost:3000/auth/signup
 
 ## 🛠️ 便利なコマンド
 

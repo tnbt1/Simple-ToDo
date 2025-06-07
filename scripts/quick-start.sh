@@ -288,6 +288,7 @@ fi
 # Show final access information
 echo "📋 Access Information:"
 echo "🌐 Application URL: http://localhost:3000"
+echo "👤 Test Account: test@example.com / test123 (auto-created)"
 echo "👤 Create Account: http://localhost:3000/auth/signup"
 echo ""
 echo "📝 Useful Commands:"

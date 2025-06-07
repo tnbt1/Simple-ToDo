@@ -90,6 +90,24 @@ export default function Home() {
     }
   }, [status, router])
 
+  // Initialize application on first load
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        await fetch('/api/init', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+      } catch (error) {
+        console.log('App initialization completed or skipped')
+      }
+    }
+
+    initializeApp()
+  }, []) // Run only once on component mount
+
   // Fetch tasks
   useEffect(() => {
     if (session) {
