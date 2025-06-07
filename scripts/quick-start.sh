@@ -231,6 +231,17 @@ else
     startup_errors=true
 fi
 
+# Check database tables (migration verification)
+echo "🗄️  Verifying database migrations..."
+table_check=$(docker compose exec postgres psql -U todouser -d todoapp -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'User';" 2>/dev/null | xargs)
+if [ "$table_check" = "1" ]; then
+    echo "✅ Database migrations completed successfully"
+else
+    echo "❌ Database migrations failed - User table not found"
+    echo "🔧 This usually means Prisma migrations didn't run"
+    startup_errors=true
+fi
+
 # Check test user creation
 echo "👤 Verifying test user creation..."
 sleep 2  # Wait for seed to complete
@@ -279,9 +290,11 @@ if [ "$startup_errors" = true ]; then
     echo ""
     echo "🔧 Troubleshooting steps:"
     echo "  1. Check logs: docker compose logs -f"
-    echo "  2. Reset database: make reset-db"
-    echo "  3. Fix NextAuth: make fix-nextauth"
-    echo "  4. Health check: make health"
+    echo "  2. Check app logs: docker compose logs app"
+    echo "  3. Reset database: docker compose down && docker volume rm simple-todo_postgres_data && docker compose up -d"
+    echo "  4. Manual migration: docker compose exec app npx prisma migrate deploy"
+    echo "  5. Manual seed: docker compose exec app npm run seed"
+    echo "  6. Health check: make health"
     echo ""
 else
     echo "🎉 All systems are operational!"
