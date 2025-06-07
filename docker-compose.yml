@@ -81,6 +81,25 @@ services:
       - todo-network
     volumes:
       - ./scripts:/app/scripts:ro
+    command: >
+      sh -c "
+        echo '🚀 Starting Todo Application...';
+        echo '⏳ Waiting for PostgreSQL...';
+        while ! nc -z postgres 5432; do
+          echo '🔄 PostgreSQL not ready, waiting...';
+          sleep 2;
+        done;
+        echo '✅ PostgreSQL is ready!';
+        echo '🗄️ Running database migrations...';
+        npx prisma migrate deploy;
+        echo '🔧 Generating Prisma client...';
+        npx prisma generate;
+        echo '🌱 Checking database seed...';
+        npm run seed;
+        echo '🎉 Database setup complete!';
+        echo '🚀 Starting Next.js application...';
+        node server.js
+      "
     deploy:
       resources:
         limits:
