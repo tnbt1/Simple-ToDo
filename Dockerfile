@@ -59,8 +59,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modul
 # Copy scripts for database initialization
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
-# Copy bcryptjs for seed script
+# Copy required node_modules for runtime operations
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/tsx ./node_modules/tsx
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/.bin
 
 # Copy package.json for npx commands
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
@@ -72,5 +74,8 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-# Start the application
-CMD ["node", "server.js"]
+# Make startup script executable
+RUN chmod +x ./scripts/start-app.sh
+
+# Start the application with database initialization
+CMD ["./scripts/start-app.sh"]
