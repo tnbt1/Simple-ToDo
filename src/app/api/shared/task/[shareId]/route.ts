@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { prisma } from '@/lib/prisma'
 
 // 共有されたタスクを取得
 export async function GET(
   request: NextRequest,
-  { params }: { params: { shareId: string } }
+  context: { params: Promise<{ shareId: string }> }
 ) {
   try {
-    const { shareId } = params
+    const { shareId } = await context.params
 
     if (!shareId) {
       return NextResponse.json({ error: '共有IDが必要です' }, { status: 400 })
