@@ -18,7 +18,12 @@ import {
   Moon,
   LogOut,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Share2,
+  Copy,
+  Check,
+  MessageSquare,
+  Settings
 } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { formatDate, getDaysUntilDue } from '../lib/utils'
@@ -68,6 +73,9 @@ export default function Home() {
   const [editingCategory, setEditingCategory] = useState<string | null>(null)
   const [editCategoryName, setEditCategoryName] = useState('')
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [sharingTaskId, setSharingTaskId] = useState<string | null>(null)
+  const [shareUrls, setShareUrls] = useState<Record<string, string>>({})
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
 
   const router = useRouter()
 
@@ -321,6 +329,59 @@ export default function Home() {
     }
   }
 
+  const shareTask = async (taskId: string) => {
+    try {
+      setSharingTaskId(taskId)
+      const response = await fetch('/api/tasks/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setShareUrls({ ...shareUrls, [taskId]: data.shareUrl })
+      } else {
+        setError('共有URLの生成に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error sharing task:', error)
+      setError('共有URLの生成に失敗しました')
+    } finally {
+      setSharingTaskId(null)
+    }
+  }
+
+  const copyShareUrl = async (taskId: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedTaskId(taskId)
+      setTimeout(() => setCopiedTaskId(null), 2000)
+    } catch (error) {
+      console.error('Error copying URL:', error)
+      setError('URLのコピーに失敗しました')
+    }
+  }
+
+  const unshareTask = async (taskId: string) => {
+    try {
+      const response = await fetch(`/api/tasks/share?taskId=${taskId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        const newShareUrls = { ...shareUrls }
+        delete newShareUrls[taskId]
+        setShareUrls(newShareUrls)
+      } else {
+        setError('共有の解除に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error unsharing task:', error)
+      setError('共有の解除に失敗しました')
+    }
+  }
+
   const getPriorityColor = (priority: string) => {
     if (darkMode) {
       switch (priority) {
@@ -406,15 +467,15 @@ export default function Home() {
           ? 'bg-gray-800/80 border-gray-700/50' 
           : 'bg-white/80 border-gray-200/50'
       }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className={`text-xl font-semibold ${
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <h1 className={`text-lg sm:text-xl font-semibold ${
                 darkMode ? 'text-white' : 'text-gray-900'
               }`}>
                 ✨ Simple ToDo
               </h1>
-              <div className="relative">
+              <div className="relative hidden sm:block">
                 <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${
                   darkMode ? 'text-gray-400' : 'text-gray-500'
                 }`} />
@@ -432,8 +493,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className="hidden sm:flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => setFilterStatus('all')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
@@ -469,7 +530,7 @@ export default function Home() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'dueDate' | 'priority' | 'title' | 'createdAt')}
-                className={`text-sm border rounded-lg px-3 py-1.5 transition-colors ${
+                className={`text-xs sm:text-sm border rounded-lg px-2 sm:px-3 py-1.5 transition-colors ${
                   darkMode 
                     ? 'bg-gray-700 border-gray-600 text-gray-200' 
                     : 'bg-white border-gray-200 text-gray-900'
@@ -483,7 +544,7 @@ export default function Home() {
 
               <button
                 onClick={() => setGroupByCategory(!groupByCategory)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                className={`px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg border transition-colors ${
                   groupByCategory
                     ? darkMode 
                       ? 'bg-blue-600 text-white border-blue-600' 
@@ -493,7 +554,8 @@ export default function Home() {
                       : 'bg-white border-gray-200 text-gray-900 hover:bg-gray-50'
                 }`}
               >
-                分類表示
+                <span className="hidden sm:inline">分類表示</span>
+                <span className="sm:hidden">分類</span>
               </button>
 
               <button
@@ -505,6 +567,18 @@ export default function Home() {
                 }`}
               >
                 {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+
+              <button
+                onClick={() => router.push('/account')}
+                className={`p-2 rounded-lg transition-colors ${
+                  darkMode 
+                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                title="アカウント設定"
+              >
+                <Settings className="h-4 w-4" />
               </button>
 
               {session && (
@@ -559,7 +633,7 @@ export default function Home() {
           {!showForm ? (
             <button
               onClick={() => setShowForm(true)}
-              className={`w-full p-6 border-2 border-dashed rounded-xl transition-all group ${
+              className={`w-full p-4 sm:p-6 border-2 border-dashed rounded-xl transition-all group ${
                 darkMode 
                   ? 'border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300 hover:bg-gray-800/50' 
                   : 'border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-600 hover:bg-gray-50'
@@ -567,7 +641,7 @@ export default function Home() {
             >
               <div className="flex items-center justify-center space-x-2">
                 <Plus className="h-5 w-5" />
-                <span className="font-medium">新しいタスクを追加</span>
+                <span className="font-medium text-sm sm:text-base">新しいタスクを追加</span>
               </div>
             </button>
           ) : (
@@ -881,7 +955,7 @@ export default function Home() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -20 }}
                           transition={{ delay: index * 0.05 }}
-                          className={`p-6 rounded-xl border transition-all duration-300 hover:shadow-xl group ${
+                          className={`p-4 sm:p-6 rounded-xl border transition-all duration-300 hover:shadow-xl group ${
                             task.completed ? 'opacity-60' : ''
                           } ${
                             darkMode 
@@ -892,10 +966,10 @@ export default function Home() {
                             task.priority === 'MEDIUM' ? 'priority-medium' : 'priority-low'
                           }`}
                         >
-                          <div className="flex items-start space-x-4">
+                          <div className="flex items-start space-x-3 sm:space-x-4">
                             <button
                               onClick={() => toggleTask(task.id)}
-                              className={`mt-1 transition-colors ${
+                              className={`mt-1 transition-colors flex-shrink-0 ${
                                 task.completed 
                                   ? 'text-green-500' 
                                   : darkMode ? 'text-gray-400 hover:text-green-400' : 'text-gray-400 hover:text-green-500'
@@ -909,24 +983,26 @@ export default function Home() {
                             </button>
                             
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-3 mb-2">
-                                <h3
-                                  className={`font-semibold text-lg ${
-                                    task.completed 
-                                      ? darkMode ? 'text-gray-500 line-through' : 'text-gray-500 line-through'
-                                      : darkMode ? 'text-white' : 'text-gray-900'
-                                  }`}
-                                >
-                                  {task.title}
-                                </h3>
-                                <span
-                                  className={`px-2 py-1 text-xs font-medium rounded-full border ${getPriorityColor(task.priority)}`}
-                                >
-                                  {task.priority === 'HIGH' ? '高' : task.priority === 'MEDIUM' ? '中' : '低'}
-                                </span>
+                              <div className="mb-2">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <h3
+                                    className={`font-semibold text-base sm:text-lg flex-1 min-w-0 break-words ${
+                                      task.completed 
+                                        ? darkMode ? 'text-gray-500 line-through' : 'text-gray-500 line-through'
+                                        : darkMode ? 'text-white' : 'text-gray-900'
+                                    }`}
+                                  >
+                                    {task.title}
+                                  </h3>
+                                  <span
+                                    className={`px-2 py-1 text-xs font-medium rounded-full border flex-shrink-0 ${getPriorityColor(task.priority)}`}
+                                  >
+                                    {task.priority === 'HIGH' ? '高' : task.priority === 'MEDIUM' ? '中' : '低'}
+                                  </span>
+                                </div>
                                 {!groupByCategory && task.category && (
                                   <span
-                                    className={`px-2 py-1 text-xs font-medium rounded-md ${
+                                    className={`inline-block px-2 py-1 text-xs font-medium rounded-md ${
                                       darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'
                                     }`}
                                   >
@@ -947,7 +1023,7 @@ export default function Home() {
                                 </p>
                               )}
                               
-                              <div className={`flex items-center space-x-4 text-xs ${
+                              <div className={`flex flex-wrap items-center gap-3 sm:gap-4 text-xs ${
                                 darkMode ? 'text-gray-400' : 'text-gray-500'
                               }`}>
                                 {task.dueDate && (
@@ -974,16 +1050,76 @@ export default function Home() {
                               </div>
                             </div>
                             
-                            <button
-                              onClick={() => deleteTask(task.id)}
-                              className={`opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all ${
-                                darkMode 
-                                  ? 'text-gray-500 hover:text-red-400 hover:bg-gray-700' 
-                                  : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
-                              }`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              {/* スレッドボタン */}
+                              <button
+                                onClick={() => router.push(`/tasks/${task.id}`)}
+                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                  darkMode 
+                                    ? 'text-gray-500 hover:text-indigo-400 hover:bg-gray-700' 
+                                    : 'text-gray-400 hover:text-indigo-500 hover:bg-gray-100'
+                                }`}
+                                title="スレッドを表示"
+                              >
+                                <MessageSquare className="h-4 w-4" />
+                              </button>
+
+                              {/* 共有ボタン */}
+                              {!shareUrls[task.id] ? (
+                                <button
+                                  onClick={() => shareTask(task.id)}
+                                  disabled={sharingTaskId === task.id}
+                                  className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                    darkMode 
+                                      ? 'text-gray-500 hover:text-blue-400 hover:bg-gray-700' 
+                                      : 'text-gray-400 hover:text-blue-500 hover:bg-gray-100'
+                                  } ${sharingTaskId === task.id ? 'animate-pulse' : ''}`}
+                                >
+                                  <Share2 className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                <div className="flex items-center space-x-1">
+                                  <button
+                                    onClick={() => copyShareUrl(task.id, shareUrls[task.id])}
+                                    className={`p-2 rounded-lg transition-all ${
+                                      darkMode 
+                                        ? 'text-blue-400 hover:bg-gray-700' 
+                                        : 'text-blue-500 hover:bg-gray-100'
+                                    }`}
+                                    title="共有URLをコピー"
+                                  >
+                                    {copiedTaskId === task.id ? (
+                                      <Check className="h-4 w-4 text-green-500" />
+                                    ) : (
+                                      <Copy className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => unshareTask(task.id)}
+                                    className={`p-1 rounded transition-all text-xs ${
+                                      darkMode 
+                                        ? 'text-gray-400 hover:text-gray-200' 
+                                        : 'text-gray-500 hover:text-gray-700'
+                                    }`}
+                                    title="共有を解除"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* 削除ボタン */}
+                              <button
+                                onClick={() => deleteTask(task.id)}
+                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                  darkMode 
+                                    ? 'text-gray-500 hover:text-red-400 hover:bg-gray-700' 
+                                    : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
+                                }`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
                         </motion.div>
                         )

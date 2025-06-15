@@ -1,10 +1,11 @@
 # Makefile for Todo App
 
-.PHONY: help build up down restart logs clean fix-warnings version-bump
+.PHONY: help build up down restart logs clean fix-warnings version-bump install
 
 # Default target
 help:
 	@echo "Available commands:"
+	@echo "  make install         - Install npm dependencies"
 	@echo "  make up              - Start all services"
 	@echo "  make down            - Stop all services"
 	@echo "  make restart         - Restart all services"
@@ -18,6 +19,12 @@ help:
 
 # Get current version (with fallback)
 VERSION := $(shell cat .version 2>/dev/null || echo "1.0.0")
+
+# Install dependencies
+install:
+	@echo "Installing npm dependencies..."
+	npm install
+	@echo "Dependencies installed!"
 
 # Start services
 up:
