@@ -250,8 +250,8 @@ echo "🌐 Testing application response..."
 sleep 5  # Give a bit more time for the app to start
 response_check=0
 for i in {1..3}; do
-    if curl -s http://localhost:3000 > /dev/null 2>&1; then
-        echo "✅ Application is responding on port 3000!"
+    if curl -s http://localhost:3100 > /dev/null 2>&1; then
+        echo "✅ Application is responding on port 3100!"
         response_check=1
         break
     else
@@ -287,9 +287,9 @@ fi
 
 # Show final access information
 echo "📋 Access Information:"
-echo "🌐 Application URL: http://localhost:3000"
+echo "🌐 Application URL: http://localhost:3100"
 echo "👤 Test Account: test@example.com / test123 (auto-created)"
-echo "👤 Create Account: http://localhost:3000/auth/signup"
+echo "👤 Create Account: http://localhost:3100/auth/signup"
 echo ""
 echo "📝 Useful Commands:"
 echo "  make logs        # View all logs"
