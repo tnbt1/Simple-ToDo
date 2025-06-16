@@ -1,3 +1,6 @@
+-- CreateEnum
+CREATE TYPE "Permission" AS ENUM ('VIEW', 'COMMENT', 'EDIT', 'ADMIN');
+
 -- AlterTable
 ALTER TABLE "Task" ADD COLUMN     "isShared" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "shareId" TEXT;
@@ -65,9 +68,6 @@ CREATE TABLE "TaskPermission" (
 
     CONSTRAINT "TaskPermission_pkey" PRIMARY KEY ("id")
 );
-
--- CreateEnum
-CREATE TYPE "Permission" AS ENUM ('VIEW', 'COMMENT', 'EDIT', 'ADMIN');
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Task_shareId_key" ON "Task"("shareId");

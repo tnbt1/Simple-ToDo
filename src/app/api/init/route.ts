@@ -43,6 +43,8 @@ export async function POST() {
         dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days from now
         position: 1,
         userId: testUser.id,
+        isShared: false,
+        category: '仕事',
       },
       {
         title: 'UIデザインのレビュー',
@@ -52,6 +54,8 @@ export async function POST() {
         dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // tomorrow
         position: 2,
         userId: testUser.id,
+        isShared: false,
+        category: 'デザイン',
       },
       {
         title: 'データベース設計の完了',
@@ -62,6 +66,8 @@ export async function POST() {
         dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // yesterday
         position: 3,
         userId: testUser.id,
+        isShared: false,
+        category: '開発',
       },
     ]
 

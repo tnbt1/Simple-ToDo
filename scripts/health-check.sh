@@ -39,8 +39,8 @@ fi
 
 # Check Application
 echo "🌐 Application:"
-if curl -s http://localhost:3000 > /dev/null 2>&1; then
-    echo "  ✅ Application is responding on port 3000"
+if curl -s http://localhost:3100 > /dev/null 2>&1; then
+    echo "  ✅ Application is responding on port 3100"
 else
     echo "  ❌ Application is not responding"
 fi

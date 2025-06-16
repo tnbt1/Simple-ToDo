@@ -32,7 +32,7 @@ up:
 	@./scripts/pre-start.sh
 	docker compose up -d
 	@echo "Services started!"
-	@echo "Access the app at: http://localhost:3000"
+	@echo "Access the app at: http://localhost:3100"
 
 # Stop services
 down:
