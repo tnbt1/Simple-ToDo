@@ -105,9 +105,21 @@ else
     echo "⏭️  Redis optimization disabled in configuration"
 fi
 
+# Create logs directory with proper permissions
+echo ""
+echo "📁 Creating logs directory..."
+if [ ! -d "logs" ]; then
+    mkdir -p logs
+    echo "✅ Logs directory created"
+else
+    echo "📄 Logs directory already exists"
+fi
+# Set permissions (will work for current user)
+chmod 755 logs 2>/dev/null || true
+
 echo ""
 echo "🧹 Step 4: Clean Start"
-echo "======================"
+echo "======================="
 
 # Check if containers are already running
 if docker compose ps | grep -q "Up"; then
@@ -242,8 +254,10 @@ else
     startup_errors=true
 fi
 
-# Database setup is complete - users can be created via signup
-echo "✅ Database is ready for user registration"
+# Database setup is complete
+echo "✅ Database is ready"
+echo "🤖 Test user will be created automatically when the app starts"
+echo "   (The app calls /api/init on first load to create test@example.com)"
 
 # Verify application is responding
 echo "🌐 Testing application response..."
@@ -288,7 +302,8 @@ fi
 # Show final access information
 echo "📋 Access Information:"
 echo "🌐 Application URL: http://localhost:3100"
-echo "👤 Test Account: test@example.com / test123 (auto-created)"
+echo "👤 Test Account: test@example.com / test123"
+echo "   (Created automatically on first app access via /api/init)"
 echo "👤 Create Account: http://localhost:3100/auth/signup"
 echo ""
 echo "📝 Useful Commands:"

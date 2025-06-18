@@ -51,8 +51,10 @@ model User {
   accounts Account[]
   sessions Session[]
   tasks    Task[]
+  importedTasks Task[] @relation("ImportedTasks")
   sharedTasks SharedTask[]
   sharedCategories SharedCategory[]
+  categories Category[]
   threadMessages ThreadMessage[]
   taskPermissions TaskPermission[]
 }
@@ -79,10 +81,21 @@ model Task {
   userId      String
   shareId     String?  @unique
   isShared    Boolean  @default(false)
+  uniqueId    String   @unique @default(cuid())  // グローバルに一意なID
+  
+  // 共有元の情報
+  importedFromTaskId String?
+  importedFromUserId String?
+  originalUniqueId   String?  // インポート元のuniqueId
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  importedFromUser User? @relation("ImportedTasks", fields: [importedFromUserId], references: [id], onDelete: SetNull)
+  importedFromTask Task? @relation("ImportedTaskRelation", fields: [importedFromTaskId], references: [id], onDelete: SetNull)
+  importedTasks Task[] @relation("ImportedTaskRelation")
+  
   sharedWith SharedTask[]
   threadMessages ThreadMessage[]
   permissions TaskPermission[]
@@ -93,6 +106,8 @@ model Task {
   @@index([status])
   @@index([category])
   @@index([shareId])
+  @@index([uniqueId])
+  @@index([originalUniqueId])
 }
 
 enum Priority {
@@ -125,10 +140,27 @@ model SharedTask {
   @@index([sharedWithId])
 }
 
+// カテゴリー管理
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  uniqueId    String   @unique @default(cuid())  // グローバルに一意なID
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([name, userId])
+  @@index([userId])
+  @@index([uniqueId])
+}
+
 // カテゴリーごとの共有
 model SharedCategory {
   id          String   @id @default(cuid())
   category    String
+  categoryUniqueId String?  // カテゴリーのuniqueId
   ownerId     String
   sharedWithId String
   permission  Permission @default(VIEW)
@@ -143,6 +175,7 @@ model SharedCategory {
   @@index([ownerId])
   @@index([sharedWithId])
   @@index([shareId])
+  @@index([categoryUniqueId])
 }
 
 // タスクごとのスレッドメッセージ

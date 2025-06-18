@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { formatDate, getDaysUntilDue } from '../lib/utils'
+import { useSSE } from '../lib/sse-client'
 
 interface Task {
   id: string
@@ -41,6 +42,23 @@ interface Task {
   category?: string | null
   createdAt: string
   updatedAt: string
+  shareId?: string | null
+  isShared?: boolean
+  _count?: {
+    threadMessages: number
+  }
+  importedFromTaskId?: string | null
+  importedFromUser?: {
+    name?: string | null
+    email: string
+  } | null
+  sharedWith?: Array<{
+    sharedWithId: string
+    sharedBy: {
+      name?: string | null
+      email: string
+    }
+  }>
 }
 
 export default function Home() {
@@ -67,6 +85,7 @@ export default function Home() {
   const [category, setCategory] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [categories, setCategories] = useState<string[]>([])
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false)
   const [groupByCategory, setGroupByCategory] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -76,6 +95,9 @@ export default function Home() {
   const [sharingTaskId, setSharingTaskId] = useState<string | null>(null)
   const [shareUrls, setShareUrls] = useState<Record<string, string>>({})
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
+  const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({})
+  const [categoryShareUrls, setCategoryShareUrls] = useState<Record<string, string>>({})
+  const [copiedCategoryName, setCopiedCategoryName] = useState<string | null>(null)
 
   const router = useRouter()
 
@@ -129,6 +151,16 @@ export default function Home() {
     setCategories(uniqueCategories)
   }, [tasks])
 
+  // Load read message counts from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('readMessageCounts')
+      if (stored) {
+        setReadMessageCounts(JSON.parse(stored))
+      }
+    }
+  }, [])
+
   const fetchTasks = async () => {
     try {
       setLoading(true)
@@ -136,6 +168,15 @@ export default function Home() {
       if (response.ok) {
         const tasksData = await response.json()
         setTasks(tasksData)
+        
+        // Build shareUrls from tasks that have shareId
+        const urls: Record<string, string> = {}
+        tasksData.forEach((task: Task) => {
+          if (task.shareId) {
+            urls[task.id] = `${window.location.origin}/shared/task/${task.shareId}`
+          }
+        })
+        setShareUrls(urls)
       }
     } catch (error) {
       console.error('Error fetching tasks:', error)
@@ -143,6 +184,53 @@ export default function Home() {
       setLoading(false)
     }
   }
+
+  // Handle real-time updates
+  const handleSSEMessage = useCallback((event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data)
+      
+      switch (data.type) {
+        case 'task-created':
+          setTasks(prevTasks => [...prevTasks, data.task])
+          break
+        
+        case 'task-updated':
+          setTasks(prevTasks => 
+            prevTasks.map(task => 
+              task.id === data.task.id ? data.task : task
+            )
+          )
+          break
+        
+        case 'task-deleted':
+          setTasks(prevTasks => 
+            prevTasks.filter(task => task.id !== data.taskId)
+          )
+          break
+          
+        case 'thread-message':
+          // Update task message count when new thread message arrives
+          setTasks(prevTasks => 
+            prevTasks.map(task => 
+              task.id === data.taskId 
+                ? { ...task, _count: { ...task._count, threadMessages: (task._count?.threadMessages || 0) + 1 } }
+                : task
+            )
+          )
+          break
+      }
+    } catch (error) {
+      console.error('Error handling SSE message:', error)
+    }
+  }, [])
+
+  // Set up SSE connection
+  useSSE('/api/events', {
+    onMessage: handleSSEMessage,
+    onOpen: () => console.log('Real-time updates connected'),
+    onError: () => console.log('Real-time updates disconnected')
+  })
 
   const addTask = async () => {
     if (!title.trim()) {
@@ -184,6 +272,8 @@ export default function Home() {
         setCategory('')
         setShowForm(false)
         setError(null)
+        setShowNewCategoryInput(false)
+        setNewCategory('')
       } else {
         setError(data.error || 'タスクの作成に失敗しました')
       }
@@ -341,6 +431,13 @@ export default function Home() {
       if (response.ok) {
         const data = await response.json()
         setShareUrls({ ...shareUrls, [taskId]: data.shareUrl })
+        
+        // Update the task in local state to reflect sharing status
+        setTasks(tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, shareId: data.shareId, isShared: true }
+            : t
+        ))
       } else {
         setError('共有URLの生成に失敗しました')
       }
@@ -354,12 +451,77 @@ export default function Home() {
 
   const copyShareUrl = async (taskId: string, url: string) => {
     try {
-      await navigator.clipboard.writeText(url)
+      // Try modern clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea')
+        textArea.value = url
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-999999px'
+        textArea.style.top = '-999999px'
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        
+        try {
+          document.execCommand('copy')
+        } catch (err) {
+          console.error('Fallback copy failed:', err)
+          throw new Error('Copy failed')
+        } finally {
+          textArea.remove()
+        }
+      }
+      
       setCopiedTaskId(taskId)
       setTimeout(() => setCopiedTaskId(null), 2000)
     } catch (error) {
       console.error('Error copying URL:', error)
-      setError('URLのコピーに失敗しました')
+      // Show URL in alert as last resort
+      alert(`共有URL: ${url}\n\nこのURLをコピーしてください。`)
+    }
+  }
+
+  const shareCategory = async (categoryName: string) => {
+    try {
+      const response = await fetch(`/api/categories/share/${encodeURIComponent(categoryName)}`, {
+        method: 'POST'
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const fullUrl = `${window.location.origin}${data.shareUrl}`
+        setCategoryShareUrls({ ...categoryShareUrls, [categoryName]: fullUrl })
+        
+        // URLをクリップボードにコピー
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(fullUrl)
+          } else {
+            // Fallback
+            const textArea = document.createElement('textarea')
+            textArea.value = fullUrl
+            textArea.style.position = 'fixed'
+            textArea.style.left = '-999999px'
+            document.body.appendChild(textArea)
+            textArea.focus()
+            textArea.select()
+            document.execCommand('copy')
+            textArea.remove()
+          }
+          setCopiedCategoryName(categoryName)
+          setTimeout(() => setCopiedCategoryName(null), 2000)
+        } catch (error) {
+          alert(`共有URL: ${fullUrl}\n\nこのURLをコピーしてください。`)
+        }
+      } else {
+        setError('カテゴリーの共有に失敗しました')
+      }
+    } catch (error) {
+      console.error('Error sharing category:', error)
+      setError('カテゴリーの共有中にエラーが発生しました')
     }
   }
 
@@ -373,6 +535,13 @@ export default function Home() {
         const newShareUrls = { ...shareUrls }
         delete newShareUrls[taskId]
         setShareUrls(newShareUrls)
+        
+        // Update the task in local state to reflect unsharing
+        setTasks(tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, shareId: null, isShared: false }
+            : t
+        ))
       } else {
         setError('共有の解除に失敗しました')
       }
@@ -462,22 +631,22 @@ export default function Home() {
         : 'bg-gradient-to-br from-blue-50 via-white to-indigo-50'
     }`}>
       {/* Header */}
-      <header className={`border-b transition-colors backdrop-blur-sm ${
+      <header className={`border-b transition-colors ${
         darkMode 
-          ? 'bg-gray-800/80 border-gray-700/50' 
-          : 'bg-white/80 border-gray-200/50'
+          ? 'bg-gray-900/80 backdrop-blur-lg border-gray-700/50' 
+          : 'bg-white/90 backdrop-blur-lg border-gray-200/70 shadow-sm'
       }`}>
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-2 sm:space-x-4">
-              <h1 className={`text-lg sm:text-xl font-semibold ${
+              <h1 className={`text-lg sm:text-xl font-bold ${
                 darkMode ? 'text-white' : 'text-gray-900'
               }`}>
-                ✨ Simple ToDo
+                ✨ <span className="text-gradient">Simple ToDo</span>
               </h1>
               <div className="relative hidden sm:block">
                 <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${
-                  darkMode ? 'text-gray-400' : 'text-gray-500'
+                  darkMode ? 'text-gray-200' : 'text-gray-700'
                 }`} />
                 <input
                   type="text"
@@ -486,8 +655,8 @@ export default function Home() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={`pl-9 pr-4 py-2 rounded-lg border text-sm transition-colors ${
                     darkMode 
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                      : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-500'
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-300' 
+                      : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-600'
                   } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 />
               </div>
@@ -499,8 +668,8 @@ export default function Home() {
                   onClick={() => setFilterStatus('all')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     filterStatus === 'all'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
                   }`}
                 >
                   すべて
@@ -509,8 +678,8 @@ export default function Home() {
                   onClick={() => setFilterStatus('pending')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     filterStatus === 'pending'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
                   }`}
                 >
                   未完了
@@ -519,8 +688,8 @@ export default function Home() {
                   onClick={() => setFilterStatus('completed')}
                   className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     filterStatus === 'completed'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100'
                   }`}
                 >
                   完了済み
@@ -562,7 +731,7 @@ export default function Home() {
                 onClick={() => setDarkMode(!darkMode)}
                 className={`p-2 rounded-lg transition-colors ${
                   darkMode 
-                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                    ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' 
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
               >
@@ -573,7 +742,7 @@ export default function Home() {
                 onClick={() => router.push('/account')}
                 className={`p-2 rounded-lg transition-colors ${
                   darkMode 
-                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' 
+                    ? 'bg-gray-700 text-gray-100 hover:bg-gray-600' 
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
                 title="アカウント設定"
@@ -648,11 +817,11 @@ export default function Home() {
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className={`p-6 rounded-xl border transition-all duration-300 ${
+              className={`p-6 rounded-xl transition-all duration-300 shadow-xl hover:shadow-2xl fade-in ${
                 darkMode 
-                  ? 'bg-gray-800/70 backdrop-blur-xl border-gray-700/50' 
-                  : 'bg-white/70 backdrop-blur-xl border-gray-200/50'
-              } shadow-xl hover:shadow-2xl`}
+                  ? 'bg-gray-800/80 backdrop-blur-lg border border-gray-700/50' 
+                  : 'bg-white/95 backdrop-blur-lg border border-gray-200/70'
+              }`}
             >
               <div className="space-y-4">
                 <input
@@ -660,11 +829,11 @@ export default function Home() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="タスクのタイトル..."
-                  className={`w-full px-4 py-3 rounded-lg border transition-all duration-200 text-lg font-medium ${
+                  className={`w-full px-4 py-3 rounded-lg border input-modern text-lg font-medium ${
                     darkMode 
-                      ? 'bg-gray-700/50 backdrop-blur-sm border-gray-600/50 text-white placeholder-gray-400 focus:bg-gray-700/70' 
-                      : 'bg-white/50 backdrop-blur-sm border-gray-200/50 text-gray-900 placeholder-gray-500 focus:bg-white/70'
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 hover:border-gray-400/50`}
+                      ? 'bg-gray-700/50 backdrop-blur-sm border-gray-600/50 text-white placeholder-gray-300 focus:bg-gray-700/70' 
+                      : 'bg-white/50 backdrop-blur-sm border-gray-200/50 text-gray-900 placeholder-gray-600 focus:bg-white/70'
+                  }`}
                   onKeyDown={(e) => e.key === 'Enter' && addTask()}
                 />
                 
@@ -675,15 +844,15 @@ export default function Home() {
                   rows={3}
                   className={`w-full px-4 py-3 rounded-lg border transition-colors resize-none ${
                     darkMode 
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                      : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-500'
+                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-300' 
+                      : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-600'
                   } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                 />
                 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
+                      darkMode ? 'text-gray-200' : 'text-gray-700'
                     }`}>
                       期限
                     </label>
@@ -693,15 +862,15 @@ export default function Home() {
                       onChange={(e) => setDueDate(e.target.value)}
                       className={`w-full px-3 py-2 rounded-lg border transition-colors ${
                         darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white' 
-                          : 'bg-white border-gray-200 text-gray-900'
+                          ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                          : 'bg-white border-gray-300 text-gray-900'
                       } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                     />
                   </div>
                   
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
+                      darkMode ? 'text-gray-200' : 'text-gray-700'
                     }`}>
                       優先度
                     </label>
@@ -710,8 +879,8 @@ export default function Home() {
                       onChange={(e) => setPriority(e.target.value as 'LOW' | 'MEDIUM' | 'HIGH')}
                       className={`w-full px-3 py-2 rounded-lg border transition-colors ${
                         darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white' 
-                          : 'bg-white border-gray-200 text-gray-900'
+                          ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                          : 'bg-white border-gray-300 text-gray-900'
                       } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                     >
                       <option value="LOW">低</option>
@@ -722,46 +891,59 @@ export default function Home() {
 
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${
-                      darkMode ? 'text-gray-300' : 'text-gray-700'
+                      darkMode ? 'text-gray-200' : 'text-gray-700'
                     }`}>
                       分類
                     </label>
                     <select
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
+                      value={showNewCategoryInput ? '_new_' : category}
+                      onChange={(e) => {
+                        if (e.target.value === '_new_') {
+                          setShowNewCategoryInput(true)
+                          setCategory('')
+                        } else {
+                          setShowNewCategoryInput(false)
+                          setCategory(e.target.value)
+                          setNewCategory('')
+                        }
+                      }}
                       className={`w-full px-3 py-2 rounded-lg border transition-colors ${
                         darkMode 
-                          ? 'bg-gray-700 border-gray-600 text-white' 
-                          : 'bg-white border-gray-200 text-gray-900'
+                          ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                          : 'bg-white border-gray-300 text-gray-900'
                       } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
                     >
                       <option value="">分類なし</option>
                       {categories.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
+                      <option value="_new_">➕ 新しい分類を作成...</option>
                     </select>
                   </div>
                 </div>
 
                 {/* New category input */}
-                <div>
-                  <label className={`block text-sm font-medium mb-2 ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
-                    新しい分類を作成
-                  </label>
-                  <input
-                    type="text"
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    placeholder="新しい分類名..."
-                    className={`w-full px-3 py-2 rounded-lg border transition-colors ${
-                      darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
-                        : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
-                    } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                  />
-                </div>
+                {showNewCategoryInput && (
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${
+                      darkMode ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
+                      新しい分類名
+                    </label>
+                    <input
+                      type="text"
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      placeholder="分類名を入力..."
+                      className={`w-full px-3 py-2 rounded-lg border transition-colors ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
+                          : 'bg-white border-gray-200 text-gray-900 placeholder-gray-500'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                      autoFocus
+                    />
+                  </div>
+                )}
 
                 {/* Error display */}
                 {error && (
@@ -804,7 +986,7 @@ export default function Home() {
         <div className="space-y-6">
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <div className="w-12 h-12 rounded-full spinner-gradient"></div>
             </div>
           ) : filteredAndSortedTasks.length === 0 ? (
             <motion.div
@@ -815,17 +997,17 @@ export default function Home() {
               }`}
             >
               <div className={`text-6xl mb-4 ${
-                darkMode ? 'text-gray-600' : 'text-gray-300'
+                darkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
                 📝
               </div>
               <p className={`text-lg font-medium mb-2 ${
-                darkMode ? 'text-gray-300' : 'text-gray-600'
+                darkMode ? 'text-gray-200' : 'text-gray-700'
               }`}>
                 {searchQuery || filterStatus !== 'all' ? 'タスクが見つかりません' : 'タスクがありません'}
               </p>
               <p className={`text-sm ${
-                darkMode ? 'text-gray-500' : 'text-gray-400'
+                darkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
                 {searchQuery || filterStatus !== 'all' ? '検索条件を変更してみてください' : '上のボタンから新しいタスクを追加してください'}
               </p>
@@ -865,9 +1047,9 @@ export default function Home() {
                           }}
                         >
                           {collapsedCategories.has(categoryName) ? (
-                            <ChevronRight className="h-4 w-4 text-gray-500" />
+                            <ChevronRight className="h-4 w-4 text-gray-600" />
                           ) : (
-                            <ChevronDown className="h-4 w-4 text-gray-500" />
+                            <ChevronDown className="h-4 w-4 text-gray-600" />
                           )}
                           <div className="flex items-center space-x-3">
                             {editingCategory === categoryName ? (
@@ -920,19 +1102,36 @@ export default function Home() {
                               }}
                               className={`p-1 rounded transition-colors ${
                                 darkMode 
-                                  ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' 
-                                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                  ? 'text-gray-200 hover:text-gray-100 hover:bg-gray-700' 
+                                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
                               }`}
                               title="カテゴリー名を編集"
                             >
                               <Edit3 className="h-3 w-3" />
                             </button>
                             <button
+                              onClick={() => shareCategory(categoryName)}
+                              className={`p-1 rounded transition-colors ${
+                                copiedCategoryName === categoryName
+                                  ? darkMode ? 'text-green-400' : 'text-green-600'
+                                  : darkMode 
+                                    ? 'text-gray-200 hover:text-blue-400 hover:bg-gray-700' 
+                                    : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
+                              }`}
+                              title={copiedCategoryName === categoryName ? "URLをコピーしました！" : "カテゴリーを共有"}
+                            >
+                              {copiedCategoryName === categoryName ? (
+                                <Check className="h-3 w-3" />
+                              ) : (
+                                <Share2 className="h-3 w-3" />
+                              )}
+                            </button>
+                            <button
                               onClick={() => deleteCategory(categoryName)}
                               className={`p-1 rounded transition-colors ${
                                 darkMode 
-                                  ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700' 
-                                  : 'text-gray-500 hover:text-red-500 hover:bg-gray-100'
+                                  ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
+                                  : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
                               }`}
                               title="カテゴリーを削除"
                             >
@@ -955,12 +1154,12 @@ export default function Home() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -20 }}
                           transition={{ delay: index * 0.05 }}
-                          className={`p-4 sm:p-6 rounded-xl border transition-all duration-300 hover:shadow-xl group ${
-                            task.completed ? 'opacity-60' : ''
-                          } ${
+                          className={`p-4 sm:p-6 rounded-xl border task-card group ${
                             darkMode 
-                              ? 'bg-gray-800/50 backdrop-blur-sm border-gray-700/50 hover:bg-gray-800/70 hover:border-gray-600' 
-                              : 'bg-white/70 backdrop-blur-sm border-gray-200/50 hover:bg-white hover:border-gray-300 hover:shadow-blue-100/50'
+                              ? 'bg-gray-800/70 border-gray-700/50 backdrop-blur-sm' 
+                              : 'bg-white/95 border-gray-200/70 backdrop-blur-sm shadow-sm'
+                          } ${
+                            task.completed ? 'opacity-60' : ''
                           } ${
                             task.priority === 'HIGH' ? 'priority-high' :
                             task.priority === 'MEDIUM' ? 'priority-medium' : 'priority-low'
@@ -972,7 +1171,7 @@ export default function Home() {
                               className={`mt-1 transition-colors flex-shrink-0 ${
                                 task.completed 
                                   ? 'text-green-500' 
-                                  : darkMode ? 'text-gray-400 hover:text-green-400' : 'text-gray-400 hover:text-green-500'
+                                  : darkMode ? 'text-gray-300 hover:text-green-400' : 'text-gray-500 hover:text-green-600'
                               }`}
                             >
                               {task.completed ? (
@@ -985,15 +1184,20 @@ export default function Home() {
                             <div className="flex-1 min-w-0">
                               <div className="mb-2">
                                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                                  <h3
-                                    className={`font-semibold text-base sm:text-lg flex-1 min-w-0 break-words ${
-                                      task.completed 
-                                        ? darkMode ? 'text-gray-500 line-through' : 'text-gray-500 line-through'
-                                        : darkMode ? 'text-white' : 'text-gray-900'
-                                    }`}
+                                  <Link 
+                                    href={`/tasks/${task.id}`}
+                                    className="flex-1 min-w-0"
                                   >
-                                    {task.title}
-                                  </h3>
+                                    <h3
+                                      className={`font-semibold text-base sm:text-lg break-words cursor-pointer transition-all ${
+                                        task.completed 
+                                          ? darkMode ? 'text-gray-400 line-through' : 'text-gray-500 line-through'
+                                          : darkMode ? 'text-white hover:text-blue-400' : 'text-gray-900 hover:text-blue-600'
+                                      } hover:underline`}
+                                    >
+                                      {task.title}
+                                    </h3>
+                                  </Link>
                                   <span
                                     className={`px-2 py-1 text-xs font-medium rounded-full border flex-shrink-0 ${getPriorityColor(task.priority)}`}
                                   >
@@ -1009,14 +1213,29 @@ export default function Home() {
                                     📁 {task.category}
                                   </span>
                                 )}
+                                {/* 共有情報の表示 */}
+                                {task.importedFromUser && (
+                                  <div className="mt-1">
+                                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                      📥 {task.importedFromUser.name || task.importedFromUser.email} さんから共有されたタスク
+                                    </span>
+                                  </div>
+                                )}
+                                {task.sharedWith && task.sharedWith.length > 0 && (
+                                  <div className="mt-1">
+                                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                      🔗 {task.sharedWith.length}人と共有中
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                               
                               {task.description && (
                                 <p
                                   className={`text-sm mb-3 ${
                                     task.completed 
-                                      ? darkMode ? 'text-gray-500' : 'text-gray-400'
-                                      : darkMode ? 'text-gray-300' : 'text-gray-600'
+                                      ? darkMode ? 'text-gray-400' : 'text-gray-500'
+                                      : darkMode ? 'text-gray-200' : 'text-gray-700'
                                   }`}
                                 >
                                   {task.description}
@@ -1024,7 +1243,7 @@ export default function Home() {
                               )}
                               
                               <div className={`flex flex-wrap items-center gap-3 sm:gap-4 text-xs ${
-                                darkMode ? 'text-gray-400' : 'text-gray-500'
+                                darkMode ? 'text-gray-300' : 'text-gray-600'
                               }`}>
                                 {task.dueDate && (
                                   <div className={`flex items-center space-x-1 ${
@@ -1053,27 +1272,42 @@ export default function Home() {
                             <div className="flex items-center space-x-2">
                               {/* スレッドボタン */}
                               <button
-                                onClick={() => router.push(`/tasks/${task.id}`)}
-                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                onClick={() => {
+                                  // Mark messages as read
+                                  const newReadCounts = { ...readMessageCounts, [task.id]: task._count?.threadMessages || 0 }
+                                  setReadMessageCounts(newReadCounts)
+                                  localStorage.setItem('readMessageCounts', JSON.stringify(newReadCounts))
+                                  router.push(`/tasks/${task.id}`)
+                                }}
+                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 relative ${
                                   darkMode 
-                                    ? 'text-gray-500 hover:text-indigo-400 hover:bg-gray-700' 
-                                    : 'text-gray-400 hover:text-indigo-500 hover:bg-gray-100'
+                                    ? 'text-gray-300 hover:text-indigo-400 hover:bg-gray-700' 
+                                    : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'
                                 }`}
                                 title="スレッドを表示"
                               >
                                 <MessageSquare className="h-4 w-4" />
+                                {task._count && task._count.threadMessages > 0 && 
+                                 task._count.threadMessages > (readMessageCounts[task.id] || 0) && (
+                                  <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                                    {task._count.threadMessages - (readMessageCounts[task.id] || 0)}
+                                  </span>
+                                )}
                               </button>
 
                               {/* 共有ボタン */}
                               {!shareUrls[task.id] ? (
                                 <button
                                   onClick={() => shareTask(task.id)}
-                                  disabled={sharingTaskId === task.id}
-                                  className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
-                                    darkMode 
-                                      ? 'text-gray-500 hover:text-blue-400 hover:bg-gray-700' 
-                                      : 'text-gray-400 hover:text-blue-500 hover:bg-gray-100'
+                                  disabled={sharingTaskId === task.id || !!task.importedFromTaskId}
+                                  className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 hover:share-glow ${
+                                    task.importedFromTaskId
+                                      ? 'opacity-50 cursor-not-allowed'
+                                      : darkMode 
+                                      ? 'text-gray-300 hover:text-blue-400 hover:bg-gray-700' 
+                                      : 'text-gray-600 hover:text-blue-600 hover:bg-gray-100'
                                   } ${sharingTaskId === task.id ? 'animate-pulse' : ''}`}
+                                  title={task.importedFromTaskId ? "インポートされたタスクは共有できません" : "タスクを共有"}
                                 >
                                   <Share2 className="h-4 w-4" />
                                 </button>
@@ -1098,8 +1332,8 @@ export default function Home() {
                                     onClick={() => unshareTask(task.id)}
                                     className={`p-1 rounded transition-all text-xs ${
                                       darkMode 
-                                        ? 'text-gray-400 hover:text-gray-200' 
-                                        : 'text-gray-500 hover:text-gray-700'
+                                        ? 'text-gray-300 hover:text-gray-100' 
+                                        : 'text-gray-600 hover:text-gray-800'
                                     }`}
                                     title="共有を解除"
                                   >
@@ -1113,8 +1347,8 @@ export default function Home() {
                                 onClick={() => deleteTask(task.id)}
                                 className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
                                   darkMode 
-                                    ? 'text-gray-500 hover:text-red-400 hover:bg-gray-700' 
-                                    : 'text-gray-400 hover:text-red-500 hover:bg-gray-100'
+                                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
+                                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
                                 }`}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1137,9 +1371,7 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className={`mt-8 p-4 rounded-lg text-center text-sm ${
-              darkMode ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-500'
-            }`}
+            className={`mt-8 p-4 rounded-lg text-center text-sm glass fade-in`}
           >
             {tasks.filter(task => task.completed).length} / {tasks.length} タスク完了
             {tasks.filter(task => !task.completed && task.dueDate && getDaysUntilDue(task.dueDate)! < 0).length > 0 && (

@@ -83,6 +83,9 @@ services:
       - todo-network
     volumes:
       - ./scripts:/app/scripts:ro
+      - ./logs:/app/logs
+      - ./.env.logging:/app/.env.logging:ro
+      - uploads_data:/app/public/uploads
     command: >
       sh -c "
         echo '🚀 Starting Todo Application...';
@@ -124,6 +127,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:
 
 networks:
   todo-network:

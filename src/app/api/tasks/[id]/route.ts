@@ -3,6 +3,91 @@ import { getServerSession } from "next-auth/next"
 import type { Session } from "next-auth"
 import { authOptions } from "../../../../lib/auth"
 import { prisma } from "../../../../lib/prisma"
+import { sendEventToUser } from "../../../../lib/sse-manager"
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions as any) as Session | null
+  
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  try {
+    const { id } = await params
+    
+    // First check if the user owns the task or has access to it
+    const task = await prisma.task.findFirst({
+      where: {
+        id,
+        OR: [
+          { userId: session.user.id },
+          { sharedWith: { some: { sharedWithId: session.user.id } } },
+          { isShared: true }
+        ]
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        dueDate: true,
+        priority: true,
+        status: true,
+        completed: true,
+        category: true,
+        isShared: true,
+        shareId: true,
+        createdAt: true,
+        updatedAt: true,
+        position: true,
+        tags: true,
+        userId: true,
+        importedFromTaskId: true,
+        importedFromUserId: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        _count: {
+          select: {
+            threadMessages: true
+          }
+        },
+        importedFromUser: {
+          select: {
+            name: true,
+            email: true
+          }
+        },
+        sharedWith: {
+          select: {
+            sharedWithId: true,
+            sharedBy: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    })
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 })
+    }
+
+    return NextResponse.json(task)
+  } catch (error: unknown) {
+    console.error("Error fetching task:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
 
 export async function PUT(
   request: NextRequest,
@@ -58,13 +143,95 @@ export async function PUT(
     if (tags !== undefined) updateData.tags = Array.isArray(tags) ? tags : []
     if (category !== undefined) updateData.category = category && category.trim() ? category.trim() : null
 
-    const task = await prisma.task.update({
+    // First update the task
+    await prisma.task.update({
       where: {
         id,
         userId: session.user.id
       },
       data: updateData
     })
+
+    // Then fetch the complete updated task with all relations
+    const task = await prisma.task.findFirst({
+      where: {
+        id,
+        userId: session.user.id
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        dueDate: true,
+        priority: true,
+        status: true,
+        completed: true,
+        category: true,
+        isShared: true,
+        shareId: true,
+        createdAt: true,
+        updatedAt: true,
+        position: true,
+        tags: true,
+        userId: true,
+        importedFromTaskId: true,
+        importedFromUserId: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        _count: {
+          select: {
+            threadMessages: true
+          }
+        },
+        importedFromUser: {
+          select: {
+            name: true,
+            email: true
+          }
+        },
+        sharedWith: {
+          select: {
+            sharedWithId: true,
+            sharedBy: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    })
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found after update" }, { status: 404 })
+    }
+
+    // Send real-time update to task owner
+    sendEventToUser(session.user.id, {
+      type: 'task-updated',
+      task
+    })
+
+    // If task is shared, send updates to all shared users
+    if (task.isShared) {
+      const sharedWith = await prisma.sharedTask.findMany({
+        where: { taskId: task.id },
+        select: { sharedWithId: true }
+      })
+      
+      for (const share of sharedWith) {
+        sendEventToUser(share.sharedWithId, {
+          type: 'shared-task-updated',
+          task
+        })
+      }
+    }
 
     return NextResponse.json(task)
   } catch (error: unknown) {
@@ -96,6 +263,12 @@ export async function DELETE(
         id,
         userId: session.user.id
       }
+    })
+
+    // Send real-time update
+    sendEventToUser(session.user.id, {
+      type: 'task-deleted',
+      taskId: id
     })
 
     return NextResponse.json({ success: true })

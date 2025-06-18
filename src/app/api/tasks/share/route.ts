@@ -4,14 +4,17 @@ import type { Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { nanoid } from 'nanoid'
+import { withLogging, getRequestId, createPrismaContext } from '@/lib/api-wrapper'
+import { logSharingEvent } from '@/lib/logger'
 
 // タスクの共有URLを生成
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions as any) as Session | null
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-    }
+export const POST = withLogging(async (request: NextRequest) => {
+  const session = await getServerSession(authOptions as any) as Session | null
+  const requestId = getRequestId(request)
+  
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  }
 
     const body = await request.json()
     const { taskId, permission = 'VIEW' } = body
@@ -25,16 +28,33 @@ export async function POST(request: NextRequest) {
       where: {
         id: taskId,
         user: { email: session.user.email }
-      }
+      },
+      ...createPrismaContext(requestId)
     })
 
     if (!task) {
       return NextResponse.json({ error: 'タスクが見つかりません' }, { status: 404 })
     }
 
+    // インポートされたタスクは再共有できない
+    if (task.importedFromTaskId) {
+      return NextResponse.json({ 
+        error: 'インポートされたタスクは共有できません。元のタスクを共有してください。' 
+      }, { status: 400 })
+    }
+
     // 既に共有URLがある場合はそれを返す
     if (task.shareId) {
-      const shareUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3100'}/shared/task/${task.shareId}`
+      // Get the proper base URL from request headers
+      const forwardedHost = request.headers.get('x-forwarded-host')
+      const forwardedProto = request.headers.get('x-forwarded-proto')
+      const host = request.headers.get('host')
+      
+      const baseUrl = forwardedHost
+        ? `${forwardedProto || 'https'}://${forwardedHost}`
+        : `${request.url.split('/').slice(0, 3).join('/')}`
+      
+      const shareUrl = `${baseUrl}/shared/task/${task.shareId}`
       return NextResponse.json({ shareUrl, shareId: task.shareId })
     }
 
@@ -47,29 +67,42 @@ export async function POST(request: NextRequest) {
       data: {
         shareId,
         isShared: true
-      }
+      },
+      ...createPrismaContext(requestId)
     })
 
-    const shareUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3100'}/shared/task/${shareId}`
+    // Log sharing event
+    logSharingEvent('task_shared', 'task', taskId, session.user.id!, requestId, {
+      shareId,
+      permission
+    })
+
+    // Get the proper base URL from request headers
+    const forwardedHost = request.headers.get('x-forwarded-host')
+    const forwardedProto = request.headers.get('x-forwarded-proto')
+    const host = request.headers.get('host')
+    
+    const baseUrl = forwardedHost
+      ? `${forwardedProto || 'https'}://${forwardedHost}`
+      : `${request.url.split('/').slice(0, 3).join('/')}`
+    
+    const shareUrl = `${baseUrl}/shared/task/${shareId}`
 
     return NextResponse.json({
       shareUrl,
       shareId,
       message: 'タスクの共有URLが生成されました'
     })
-  } catch (error) {
-    console.error('Share task error:', error)
-    return NextResponse.json({ error: '共有URLの生成に失敗しました' }, { status: 500 })
-  }
-}
+}, { requireAuth: true, logAuth: true })
 
 // 共有を解除
-export async function DELETE(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions as any) as Session | null
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
-    }
+export const DELETE = withLogging(async (request: NextRequest) => {
+  const session = await getServerSession(authOptions as any) as Session | null
+  const requestId = getRequestId(request)
+  
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
+  }
 
     const { searchParams } = new URL(request.url)
     const taskId = searchParams.get('taskId')
@@ -83,7 +116,8 @@ export async function DELETE(request: NextRequest) {
       where: {
         id: taskId,
         user: { email: session.user.email }
-      }
+      },
+      ...createPrismaContext(requestId)
     })
 
     if (!task) {
@@ -96,21 +130,23 @@ export async function DELETE(request: NextRequest) {
       data: {
         shareId: null,
         isShared: false
-      }
+      },
+      ...createPrismaContext(requestId)
     })
 
     // 関連する共有情報も削除
     await prisma.sharedTask.deleteMany({
-      where: { taskId }
+      where: { taskId },
+      ...createPrismaContext(requestId)
     })
 
     await prisma.taskPermission.deleteMany({
-      where: { taskId }
+      where: { taskId },
+      ...createPrismaContext(requestId)
     })
 
+    // Log unsharing event
+    logSharingEvent('task_unshared', 'task', taskId, session.user.id!, requestId)
+
     return NextResponse.json({ message: 'タスクの共有が解除されました' })
-  } catch (error) {
-    console.error('Unshare task error:', error)
-    return NextResponse.json({ error: '共有の解除に失敗しました' }, { status: 500 })
-  }
-}
+}, { requireAuth: true, logAuth: true })
