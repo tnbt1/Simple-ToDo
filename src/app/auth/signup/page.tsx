@@ -136,7 +136,7 @@ export default function SignUp() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-2">
               Simple ToDoに参加
             </h1>
-            <p className="text-gray-600">
+            <p className="text-gray-700">
               新しいアカウントを作成してスタート
             </p>
           </div>
@@ -273,7 +273,7 @@ export default function SignUp() {
           </form>
 
           <div className="mt-8 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700">
               すでにアカウントをお持ちの方は{' '}
               <Link href="/auth/signin" className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 font-medium transition-all duration-200">
                 ログイン

@@ -39,7 +39,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy the public folder
+# Copy the public folder (but not uploads, which will be created later)
 COPY --from=builder /app/public ./public
 
 # Set the correct permission for prerender cache
@@ -64,6 +64,16 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.bin ./node_modules/
 
 # Copy package.json for npx commands
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+# Create uploads directory with proper permissions
+RUN mkdir -p ./public/uploads/thread
+RUN chown -R nextjs:nodejs ./public
+RUN chmod -R 755 ./public/uploads
+
+# Create logs directory with proper permissions
+RUN mkdir -p ./logs
+RUN chown -R nextjs:nodejs ./logs
+RUN chmod -R 755 ./logs
 
 USER nextjs
 

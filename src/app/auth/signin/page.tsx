@@ -37,9 +37,15 @@ export default function SignIn() {
       if (result?.error) {
         setError('ログインに失敗しました。メールアドレスとパスワードを確認してください。')
       } else if (result?.ok) {
+        // Check for redirect URL from sessionStorage
+        const redirectUrl = sessionStorage.getItem('redirectUrl')
+        if (redirectUrl) {
+          sessionStorage.removeItem('redirectUrl')
+        }
+        
         // Force a small delay to ensure session is properly set
         setTimeout(() => {
-          router.push('/')
+          router.push(redirectUrl || '/')
           router.refresh()
         }, 100)
       }
@@ -71,7 +77,7 @@ export default function SignIn() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent mb-2">
               Simple ToDoにログイン
             </h1>
-            <p className="text-gray-600">
+            <p className="text-gray-700">
               タスクを効率的に管理しましょう
             </p>
           </div>
@@ -146,11 +152,19 @@ export default function SignIn() {
           </form>
 
           <div className="mt-8 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-700">
               アカウントをお持ちでない方は{' '}
               <Link href="/auth/signup" className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 font-medium transition-all duration-200">
                 新規登録
               </Link>
+            </p>
+          </div>
+          
+          {/* テストアカウント情報 */}
+          <div className="mt-4 p-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 backdrop-blur-sm rounded-xl border border-blue-200/30">
+            <p className="text-xs text-blue-700 text-center">
+              <span className="font-medium">テストアカウント:</span><br/>
+              メール: test@example.com / パスワード: test123
             </p>
           </div>
         </div>

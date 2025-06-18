@@ -4,16 +4,9 @@ import GoogleProvider from "next-auth/providers/google"
 import GitHubProvider from "next-auth/providers/github"
 import bcrypt from "bcryptjs"
 import { prisma } from "./prisma"
+import { logAuthEvent } from "./logger"
 
-interface NextAuthConfig {
-  adapter: unknown;
-  providers: unknown[];
-  session: unknown;
-  pages: unknown;
-  callbacks: unknown;
-}
-
-export const authOptions: NextAuthConfig = {
+export const authOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
     CredentialsProvider({
@@ -24,6 +17,10 @@ export const authOptions: NextAuthConfig = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          logAuthEvent('login_failed', undefined, false, undefined, {
+            reason: 'missing_credentials',
+            email: credentials?.email
+          })
           return null
         }
 
@@ -34,6 +31,10 @@ export const authOptions: NextAuthConfig = {
         })
 
         if (!user || !user.password) {
+          logAuthEvent('login_failed', undefined, false, undefined, {
+            reason: 'user_not_found',
+            email: credentials.email
+          })
           return null
         }
 
@@ -41,8 +42,17 @@ export const authOptions: NextAuthConfig = {
         const isValidPassword = await bcrypt.compare(credentials.password, user.password)
         
         if (!isValidPassword) {
+          logAuthEvent('login_failed', user.id, false, undefined, {
+            reason: 'invalid_password',
+            email: credentials.email
+          })
           return null
         }
+
+        logAuthEvent('login_success', user.id, true, undefined, {
+          email: user.email,
+          provider: 'credentials'
+        })
 
         return {
           id: user.id,
@@ -92,6 +102,16 @@ export const authOptions: NextAuthConfig = {
       // Allows callback URLs on the same origin
       else if (new URL(url).origin === baseUrl) return url
       return baseUrl
+    },
+    async signIn({ user, account }: { user: any; account: any }) {
+      // Log OAuth sign-ins
+      if (account?.provider && account.provider !== 'credentials') {
+        logAuthEvent('oauth_login', user.id, true, undefined, {
+          provider: account.provider,
+          email: user.email
+        })
+      }
+      return true
     },
   },
 }
