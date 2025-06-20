@@ -1,20 +1,33 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 
 interface SSEOptions {
   onMessage?: (event: MessageEvent) => void
   onError?: (error: Event) => void
   onOpen?: () => void
   reconnectDelay?: number
+  maxReconnectDelay?: number
+  maxReconnectAttempts?: number
 }
 
 export function useSSE(url: string, options: SSEOptions = {}) {
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const reconnectDelayRef = useRef(options.reconnectDelay || 5000)
+  const reconnectDelayRef = useRef(options.reconnectDelay || 1000)
+  const reconnectAttemptsRef = useRef(0)
+  const lastEventIdRef = useRef<string | null>(null)
+  const isConnectingRef = useRef(false)
+  const [connectionState, setConnectionState] = useState<'connecting' | 'open' | 'closed' | 'error'>('closed')
 
   const connect = useCallback(() => {
+    // Prevent multiple simultaneous connection attempts
+    if (isConnectingRef.current || !url) {
+      return
+    }
+    
+    isConnectingRef.current = true
+    setConnectionState('connecting')
     console.log('SSE: Attempting to connect to', url)
     
     // Clean up existing connection
@@ -24,50 +37,92 @@ export function useSSE(url: string, options: SSEOptions = {}) {
     }
 
     try {
-      const eventSource = new EventSource(url)
+      // Build URL with last event ID if available
+      const sseUrl = new URL(url, window.location.origin)
+      if (lastEventIdRef.current) {
+        sseUrl.searchParams.set('lastEventId', lastEventIdRef.current)
+      }
+      
+      const eventSource = new EventSource(sseUrl.toString(), {
+        withCredentials: true
+      })
       eventSourceRef.current = eventSource
       console.log('SSE: EventSource created')
 
       eventSource.onopen = () => {
         console.log('SSE connection established')
-        reconnectDelayRef.current = options.reconnectDelay || 5000
+        setConnectionState('open')
+        isConnectingRef.current = false
+        reconnectDelayRef.current = options.reconnectDelay || 1000
+        reconnectAttemptsRef.current = 0
         options.onOpen?.()
       }
 
-    eventSource.onmessage = (event) => {
-      console.log('SSE message received:', event.data)
-      try {
-        const data = JSON.parse(event.data)
+      eventSource.onmessage = (event) => {
+        console.log('SSE message received:', event.data)
         
-        // Ignore heartbeat messages
-        if (data.type === 'heartbeat') {
-          console.log('SSE heartbeat received')
-          return
+        // Store last event ID for reconnection
+        if (event.lastEventId) {
+          lastEventIdRef.current = event.lastEventId
         }
         
-        console.log('SSE data:', data)
-        options.onMessage?.(event)
-      } catch (error) {
-        console.error('Error parsing SSE message:', error)
+        try {
+          const data = JSON.parse(event.data)
+          
+          // Handle different message types
+          if (data.type === 'heartbeat') {
+            console.log('SSE heartbeat received')
+            return
+          }
+          
+          if (data.type === 'connected') {
+            console.log('SSE connected confirmation received')
+            return
+          }
+          
+          console.log('SSE data:', data)
+          options.onMessage?.(event)
+        } catch (error) {
+          console.error('Error parsing SSE message:', error)
+        }
       }
-    }
 
-    eventSource.onerror = (error) => {
-      console.error('SSE connection error:', error)
-      console.error('SSE readyState:', eventSource.readyState)
-      options.onError?.(error)
-      
-      // Reconnect with exponential backoff
-      eventSource.close()
-      
-      reconnectTimeoutRef.current = setTimeout(() => {
-        console.log('SSE: Attempting to reconnect...')
-        reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 60000)
-        connect()
-      }, reconnectDelayRef.current)
-    }
+      eventSource.onerror = (error) => {
+        console.error('SSE connection error:', error)
+        console.error('SSE readyState:', eventSource.readyState)
+        setConnectionState('error')
+        isConnectingRef.current = false
+        options.onError?.(error)
+        
+        // Close the connection
+        eventSource.close()
+        
+        // Implement reconnection with exponential backoff
+        const maxAttempts = options.maxReconnectAttempts || 10
+        const maxDelay = options.maxReconnectDelay || 30000
+        
+        if (reconnectAttemptsRef.current < maxAttempts) {
+          reconnectAttemptsRef.current++
+          console.log(`SSE: Scheduling reconnect attempt ${reconnectAttemptsRef.current}/${maxAttempts} in ${reconnectDelayRef.current}ms`)
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            // Exponential backoff with jitter
+            const jitter = Math.random() * 0.3 * reconnectDelayRef.current
+            reconnectDelayRef.current = Math.min(
+              reconnectDelayRef.current * 2 + jitter,
+              maxDelay
+            )
+            connect()
+          }, reconnectDelayRef.current)
+        } else {
+          console.error('SSE: Max reconnection attempts reached')
+          setConnectionState('closed')
+        }
+      }
     } catch (error) {
       console.error('SSE: Failed to create EventSource:', error)
+      setConnectionState('error')
+      isConnectingRef.current = false
       options.onError?.(new Event('error'))
     }
   }, [url, options])
@@ -80,6 +135,26 @@ export function useSSE(url: string, options: SSEOptions = {}) {
     
     connect()
 
+    // Reconnect on visibility change
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && 
+          eventSourceRef.current?.readyState === EventSource.CLOSED) {
+        console.log('SSE: Page became visible, reconnecting...')
+        connect()
+      }
+    }
+    
+    // Reconnect on online event
+    const handleOnline = () => {
+      if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+        console.log('SSE: Network came online, reconnecting...')
+        connect()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('online', handleOnline)
+
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
@@ -87,6 +162,8 @@ export function useSSE(url: string, options: SSEOptions = {}) {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('online', handleOnline)
     }
   }, [connect, url])
 
@@ -99,7 +176,15 @@ export function useSSE(url: string, options: SSEOptions = {}) {
       clearTimeout(reconnectTimeoutRef.current)
       reconnectTimeoutRef.current = null
     }
+    setConnectionState('closed')
   }, [])
 
-  return { close }
+  const reconnect = useCallback(() => {
+    close()
+    reconnectAttemptsRef.current = 0
+    reconnectDelayRef.current = options.reconnectDelay || 1000
+    connect()
+  }, [close, connect, options.reconnectDelay])
+
+  return { close, reconnect, connectionState }
 }

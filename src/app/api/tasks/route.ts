@@ -5,7 +5,7 @@ import { authOptions } from "../../../lib/auth"
 import { prisma } from "../../../lib/prisma"
 import { withLogging, getRequestId, createPrismaContext } from "../../../lib/api-wrapper"
 import { logDatabaseQuery } from "../../../lib/logger"
-import { sendEventToUser } from "../../../lib/sse-manager"
+import { sendEventToUser, sendEventToTaskViewers } from "../../../lib/sse-manager"
 
 export const GET = withLogging(async (request: NextRequest) => {
   const session = await getServerSession(authOptions as any) as Session | null
@@ -206,11 +206,20 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   // Send real-time update
   console.log('Sending task-created event for user:', session.user.id)
-  sendEventToUser(session.user.id, {
+  await sendEventToUser(session.user.id, {
     type: 'task-created',
     task
   })
   console.log('Task-created event sent')
+
+  // Send update to all users viewing tasks in this category
+  if (task.category) {
+    console.log('Sending updates to category viewers for category:', task.category)
+    await sendEventToTaskViewers(`category:${task.category}`, {
+      type: 'task-created',
+      task
+    })
+  }
 
   // Check if this category is shared and notify shared users
   if (task.category) {
@@ -226,15 +235,16 @@ export const POST = withLogging(async (request: NextRequest) => {
       ...createPrismaContext(requestId)
     })
 
+    console.log(`Sending shared-category-task-created to ${sharedCategories.length} category viewers`)
     // Notify all users who have this category shared with them
     for (const share of sharedCategories) {
-      sendEventToUser(share.sharedWithId, {
+      await sendEventToUser(share.sharedWithId, {
         type: 'shared-category-task-created',
         task
       })
 
       // Also send category-task-added event with shareId for the shared category page
-      sendEventToUser(share.sharedWithId, {
+      await sendEventToUser(share.sharedWithId, {
         type: 'category-task-added',
         shareId: share.shareId,
         task

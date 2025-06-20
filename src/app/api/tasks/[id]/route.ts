@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next"
 import type { Session } from "next-auth"
 import { authOptions } from "../../../../lib/auth"
 import { prisma } from "../../../../lib/prisma"
-import { sendEventToUser } from "../../../../lib/sse-manager"
+import { sendEventToUser, sendEventToTaskViewers } from "../../../../lib/sse-manager"
 
 export async function GET(
   request: NextRequest,
@@ -214,11 +214,18 @@ export async function PUT(
 
     // Send real-time update to task owner
     console.log('Sending task-updated event:', session.user.id)
-    sendEventToUser(session.user.id, {
+    await sendEventToUser(session.user.id, {
       type: 'task-updated',
       task
     })
     console.log('Task-updated event sent')
+
+    // Send update to all users viewing this task
+    console.log('Sending updates to task viewers for task:', task.id)
+    await sendEventToTaskViewers(task.id, {
+      type: 'task-updated',
+      task
+    })
 
     // If task is shared, send updates to all shared users
     if (task.isShared) {
@@ -227,8 +234,9 @@ export async function PUT(
         select: { sharedWithId: true }
       })
       
+      console.log(`Sending shared-task-updated to ${sharedWith.length} shared users`)
       for (const share of sharedWith) {
-        sendEventToUser(share.sharedWithId, {
+        await sendEventToUser(share.sharedWithId, {
           type: 'shared-task-updated',
           task
         })
@@ -248,9 +256,10 @@ export async function PUT(
         }
       })
 
+      console.log(`Sending category-task-updated to ${sharedCategories.length} category viewers`)
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
-        sendEventToUser(share.sharedWithId, {
+        await sendEventToUser(share.sharedWithId, {
           type: 'category-task-updated',
           shareId: share.shareId,
           task
@@ -365,11 +374,18 @@ export async function PATCH(
 
     // Send real-time update to task owner
     console.log('Sending task-updated event:', session.user.id)
-    sendEventToUser(session.user.id, {
+    await sendEventToUser(session.user.id, {
       type: 'task-updated',
       task
     })
     console.log('Task-updated event sent')
+
+    // Send update to all users viewing this task
+    console.log('Sending updates to task viewers for task:', task.id)
+    await sendEventToTaskViewers(task.id, {
+      type: 'task-updated',
+      task
+    })
 
     // If task is shared, send updates to all shared users
     if (task.isShared) {
@@ -378,8 +394,9 @@ export async function PATCH(
         select: { sharedWithId: true }
       })
       
+      console.log(`Sending shared-task-updated to ${sharedWith.length} shared users`)
       for (const share of sharedWith) {
-        sendEventToUser(share.sharedWithId, {
+        await sendEventToUser(share.sharedWithId, {
           type: 'shared-task-updated',
           task
         })
@@ -399,9 +416,10 @@ export async function PATCH(
         }
       })
 
+      console.log(`Sending category-task-updated to ${sharedCategories.length} category viewers`)
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
-        sendEventToUser(share.sharedWithId, {
+        await sendEventToUser(share.sharedWithId, {
           type: 'category-task-updated',
           shareId: share.shareId,
           task
@@ -456,11 +474,18 @@ export async function DELETE(
 
     // Send real-time update
     console.log('Sending task-deleted event:', session.user.id)
-    sendEventToUser(session.user.id, {
+    await sendEventToUser(session.user.id, {
       type: 'task-deleted',
       taskId: id
     })
     console.log('Task-deleted event sent')
+
+    // Send update to all users viewing this task
+    console.log('Sending task-deleted to task viewers for task:', id)
+    await sendEventToTaskViewers(id, {
+      type: 'task-deleted',
+      taskId: id
+    })
 
     // Check if this category is shared and notify shared users
     if (taskToDelete.category) {
@@ -475,9 +500,10 @@ export async function DELETE(
         }
       })
 
+      console.log(`Sending category-task-deleted to ${sharedCategories.length} category viewers`)
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
-        sendEventToUser(share.sharedWithId, {
+        await sendEventToUser(share.sharedWithId, {
           type: 'category-task-deleted',
           shareId: share.shareId,
           taskId: id

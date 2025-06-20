@@ -281,7 +281,7 @@ export default function Home() {
 
   // Set up SSE connection with session check
   const sseEnabled = !!(session?.user as any)?.id
-  useSSE(sseEnabled ? '/api/events' : '', {
+  const { connectionState } = useSSE(sseEnabled ? '/api/events' : '', {
     onMessage: handleSSEMessage,
     onOpen: () => {
       console.log('Real-time updates connected')
@@ -290,8 +290,16 @@ export default function Home() {
     onError: () => {
       console.log('Real-time updates disconnected')
       setSseConnected(false)
-    }
+    },
+    reconnectDelay: 1000,
+    maxReconnectDelay: 30000,
+    maxReconnectAttempts: 10
   })
+
+  // Debug SSE connection state
+  useEffect(() => {
+    console.log('SSE connection state:', connectionState)
+  }, [connectionState])
 
   // Fallback: Periodically refresh tasks to ensure sync
   useEffect(() => {

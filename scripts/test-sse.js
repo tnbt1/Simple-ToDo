@@ -1,111 +1,117 @@
+#!/usr/bin/env node
+
 const EventSource = require('eventsource');
 const fetch = require('node-fetch');
 
-// Configuration
-const BASE_URL = 'http://localhost:3000';
-const EMAIL = 'user@example.com';
-const PASSWORD = 'password123';
-
-async function getSession() {
-  console.log('Getting session...');
-  
-  // First, get CSRF token
-  const csrfResponse = await fetch(`${BASE_URL}/api/auth/csrf`, {
-    credentials: 'include',
-  });
-  const csrfData = await csrfResponse.json();
-  const csrfToken = csrfData.csrfToken;
-  
-  // Sign in
-  const signInResponse = await fetch(`${BASE_URL}/api/auth/callback/credentials`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      csrfToken,
-      email: EMAIL,
-      password: PASSWORD,
-    }),
-    credentials: 'include',
-    redirect: 'manual',
-  });
-  
-  // Get session cookie
-  const cookies = signInResponse.headers.get('set-cookie');
-  if (!cookies) {
-    throw new Error('No session cookie received');
-  }
-  
-  // Extract session token
-  const sessionMatch = cookies.match(/next-auth\.session-token=([^;]+)/);
-  if (!sessionMatch) {
-    throw new Error('No session token found');
-  }
-  
-  return sessionMatch[1];
-}
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3100';
+const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 
 async function testSSE() {
+  console.log('Testing SSE functionality...');
+  console.log('Base URL:', BASE_URL);
+  
+  // First check if the events endpoint is accessible
   try {
-    const sessionToken = await getSession();
-    console.log('Session token obtained');
-    
-    // Connect to SSE endpoint
-    console.log('Connecting to SSE endpoint...');
-    const eventSource = new EventSource(`${BASE_URL}/api/events`, {
+    const statusResponse = await fetch(`${BASE_URL}/api/events/status`, {
       headers: {
-        'Cookie': `next-auth.session-token=${sessionToken}`,
-      },
+        'Cookie': AUTH_TOKEN
+      }
     });
     
-    eventSource.onopen = () => {
-      console.log('SSE connection opened');
-    };
-    
-    eventSource.onmessage = (event) => {
-      console.log('SSE message received:', event.data);
-    };
-    
-    eventSource.onerror = (error) => {
-      console.error('SSE error:', error);
-    };
-    
-    // Create a task to trigger SSE event
-    setTimeout(async () => {
-      console.log('Creating a test task...');
+    if (statusResponse.ok) {
+      const status = await statusResponse.json();
+      console.log('SSE Status:', status);
+    } else {
+      console.error('Failed to get SSE status:', statusResponse.status);
+    }
+  } catch (error) {
+    console.error('Error checking SSE status:', error);
+  }
+  
+  // Test SSE connection
+  console.log('\nTesting SSE connection...');
+  const eventSource = new EventSource(`${BASE_URL}/api/events`, {
+    headers: {
+      'Cookie': AUTH_TOKEN
+    },
+    withCredentials: true
+  });
+  
+  let messageCount = 0;
+  let heartbeatCount = 0;
+  const startTime = Date.now();
+  
+  eventSource.onopen = () => {
+    console.log('SSE connection opened');
+  };
+  
+  eventSource.onmessage = (event) => {
+    messageCount++;
+    try {
+      const data = JSON.parse(event.data);
+      console.log(`Message ${messageCount}:`, data);
+      
+      if (data.type === 'heartbeat') {
+        heartbeatCount++;
+        console.log(`Heartbeat ${heartbeatCount} received after ${Date.now() - startTime}ms`);
+      }
+    } catch (error) {
+      console.error('Error parsing message:', error);
+    }
+  };
+  
+  eventSource.onerror = (error) => {
+    console.error('SSE error:', error);
+    if (eventSource.readyState === EventSource.CLOSED) {
+      console.log('SSE connection closed');
+    }
+  };
+  
+  // Test for 60 seconds
+  setTimeout(() => {
+    console.log('\nTest completed:');
+    console.log(`Total messages received: ${messageCount}`);
+    console.log(`Heartbeats received: ${heartbeatCount}`);
+    console.log(`Connection duration: ${Date.now() - startTime}ms`);
+    eventSource.close();
+    process.exit(0);
+  }, 60000);
+  
+  // Send a test task update after 5 seconds
+  setTimeout(async () => {
+    console.log('\nCreating test task to trigger SSE event...');
+    try {
       const response = await fetch(`${BASE_URL}/api/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Cookie': `next-auth.session-token=${sessionToken}`,
+          'Cookie': AUTH_TOKEN
         },
         body: JSON.stringify({
-          title: 'Test Task ' + new Date().toISOString(),
-          description: 'Testing SSE',
-          priority: 'MEDIUM',
-        }),
+          title: 'SSE Test Task ' + new Date().toISOString(),
+          description: 'This task was created to test SSE functionality'
+        })
       });
       
       if (response.ok) {
         const task = await response.json();
-        console.log('Task created:', task.id);
+        console.log('Test task created:', task.id);
       } else {
-        console.error('Failed to create task:', response.status);
+        console.error('Failed to create test task:', response.status);
       }
-    }, 2000);
-    
-    // Keep the script running
-    setTimeout(() => {
-      console.log('Closing SSE connection...');
-      eventSource.close();
-      process.exit(0);
-    }, 10000);
-    
-  } catch (error) {
-    console.error('Error:', error);
-    process.exit(1);
-  }
+    } catch (error) {
+      console.error('Error creating test task:', error);
+    }
+  }, 5000);
 }
+
+// Instructions for getting auth token
+console.log(`
+To test SSE with authentication:
+1. Login to the app in your browser
+2. Open DevTools and go to Application > Cookies
+3. Copy the value of 'next-auth.session-token' cookie
+4. Run: AUTH_TOKEN="next-auth.session-token=YOUR_TOKEN_HERE" node scripts/test-sse.js
+`);
 
 testSSE();
