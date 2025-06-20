@@ -87,6 +87,25 @@ export default function SharedTaskPage() {
       fetchThreadMessages()
     }
   }, [task])
+  
+  // Register as task viewer for real-time updates
+  useEffect(() => {
+    if (session && task) {
+      // Register this user as viewing the task
+      fetch(`/api/tasks/${task.id}/view`, {
+        method: 'POST',
+        credentials: 'same-origin'
+      }).catch(err => console.error('Failed to register task viewer:', err))
+      
+      // Cleanup: unregister when leaving the page
+      return () => {
+        fetch(`/api/tasks/${task.id}/view`, {
+          method: 'DELETE',
+          credentials: 'same-origin'
+        }).catch(err => console.error('Failed to unregister task viewer:', err))
+      }
+    }
+  }, [task?.id, session])
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -105,12 +124,15 @@ export default function SharedTaskPage() {
       }
       
       // Handle thread message updates
-      if (data.type === 'thread-message' && data.taskId === task?.id && showThread) {
+      if ((data.type === 'thread-message-added' || data.type === 'thread-message') && data.taskId === task?.id && showThread) {
         // Check if message already exists to avoid duplicates
-        const existingMessage = messages.find(msg => msg.id === data.message.id)
-        if (!existingMessage) {
-          setMessages(prev => [...prev, data.message])
-        }
+        setMessages(prevMessages => {
+          const exists = prevMessages.some(msg => msg.id === data.message.id)
+          if (!exists) {
+            return [...prevMessages, data.message]
+          }
+          return prevMessages
+        })
       }
     } catch (error) {
       console.error('Error handling SSE message:', error)

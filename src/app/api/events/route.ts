@@ -5,13 +5,16 @@ import { authOptions } from '../../../lib/auth'
 import { registerClient, unregisterClient } from '../../../lib/sse-manager'
 
 export async function GET(request: NextRequest) {
+  console.log('SSE endpoint called')
   const session = await getServerSession(authOptions as any) as Session | null
   
   if (!session?.user?.id) {
+    console.log('SSE endpoint: Unauthorized')
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const userId = session.user.id
+  console.log('SSE endpoint: User authenticated:', userId)
   const stream = new ReadableStream({
     start(controller) {
       // Store the controller for this user

@@ -205,10 +205,42 @@ export const POST = withLogging(async (request: NextRequest) => {
   })
 
   // Send real-time update
+  console.log('Sending task-created event for user:', session.user.id)
   sendEventToUser(session.user.id, {
     type: 'task-created',
     task
   })
+  console.log('Task-created event sent')
+
+  // Check if this category is shared and notify shared users
+  if (task.category) {
+    const sharedCategories = await prisma.sharedCategory.findMany({
+      where: {
+        category: task.category,
+        ownerId: session.user.id
+      },
+      select: {
+        shareId: true,
+        sharedWithId: true
+      },
+      ...createPrismaContext(requestId)
+    })
+
+    // Notify all users who have this category shared with them
+    for (const share of sharedCategories) {
+      sendEventToUser(share.sharedWithId, {
+        type: 'shared-category-task-created',
+        task
+      })
+
+      // Also send category-task-added event with shareId for the shared category page
+      sendEventToUser(share.sharedWithId, {
+        type: 'category-task-added',
+        shareId: share.shareId,
+        task
+      })
+    }
+  }
 
   return NextResponse.json(task, { status: 201 })
 }, { requireAuth: true, logAuth: true })

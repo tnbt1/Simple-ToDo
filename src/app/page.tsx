@@ -98,6 +98,7 @@ export default function Home() {
   const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({})
   const [categoryShareUrls, setCategoryShareUrls] = useState<Record<string, string>>({})
   const [copiedCategoryName, setCopiedCategoryName] = useState<string | null>(null)
+  const [sseConnected, setSseConnected] = useState(false)
 
   const router = useRouter()
 
@@ -189,17 +190,35 @@ export default function Home() {
   const handleSSEMessage = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data)
+      console.log('Received SSE message:', data)
       
       switch (data.type) {
         case 'task-created':
-          setTasks(prevTasks => [...prevTasks, data.task])
+          // 自分が作成したタスクは既にローカルに追加されているので、
+          // 他のユーザーが作成したタスクのみ追加する
+          setTasks(prevTasks => {
+            const exists = prevTasks.some(task => task.id === data.task.id)
+            if (exists) {
+              console.log('Task already exists, skipping:', data.task.id)
+              return prevTasks
+            }
+            console.log('Adding new task from SSE:', data.task.id)
+            return [...prevTasks, data.task]
+          })
           break
         
         case 'task-updated':
           setTasks(prevTasks => 
-            prevTasks.map(task => 
-              task.id === data.task.id ? data.task : task
-            )
+            prevTasks.map(task => {
+              if (task.id === data.task.id) {
+                // 既存のカウント情報を保持しながら更新
+                return {
+                  ...data.task,
+                  _count: task._count || data.task._count // 既存のカウントを優先的に保持
+                }
+              }
+              return task
+            })
           )
           break
         
@@ -209,7 +228,7 @@ export default function Home() {
           )
           break
           
-        case 'thread-message':
+        case 'thread-message-added':
           // Update task message count when new thread message arrives
           setTasks(prevTasks => 
             prevTasks.map(task => 
@@ -219,18 +238,82 @@ export default function Home() {
             )
           )
           break
+        
+        case 'shared-task-updated':
+          // Update shared task when it's modified by the owner
+          setTasks(prevTasks => 
+            prevTasks.map(task => {
+              // インポートされたタスクの更新も考慮
+              if (task.id === data.task.id || 
+                  (task.importedFromTaskId && task.importedFromTaskId === data.task.id)) {
+                return {
+                  ...task,
+                  ...data.task,
+                  _count: task._count || data.task._count // カウントを保持
+                }
+              }
+              return task
+            })
+          )
+          break
+        
+        case 'shared-category-task-created':
+          // Add new task created in shared category
+          setTasks(prevTasks => [...prevTasks, data.task])
+          break
       }
     } catch (error) {
       console.error('Error handling SSE message:', error)
     }
   }, [])
 
-  // Set up SSE connection
-  useSSE('/api/events', {
+  // Auto refresh every 30 seconds as fallback
+  useEffect(() => {
+    if (session && !sseConnected) {
+      const interval = setInterval(() => {
+        console.log('Auto-refreshing tasks (SSE fallback)')
+        fetchTasks()
+      }, 30000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [session, sseConnected])
+
+  // Set up SSE connection with session check
+  const sseEnabled = !!(session?.user as any)?.id
+  useSSE(sseEnabled ? '/api/events' : '', {
     onMessage: handleSSEMessage,
-    onOpen: () => console.log('Real-time updates connected'),
-    onError: () => console.log('Real-time updates disconnected')
+    onOpen: () => {
+      console.log('Real-time updates connected')
+      setSseConnected(true)
+    },
+    onError: () => {
+      console.log('Real-time updates disconnected')
+      setSseConnected(false)
+    }
   })
+
+  // Fallback: Periodically refresh tasks to ensure sync
+  useEffect(() => {
+    if (!(session?.user as any)?.id) return
+
+    const refreshTasks = async () => {
+      try {
+        const response = await fetch('/api/tasks')
+        if (response.ok) {
+          const latestTasks = await response.json()
+          setTasks(latestTasks)
+        }
+      } catch (error) {
+        console.error('Error refreshing tasks:', error)
+      }
+    }
+
+    // Refresh every 30 seconds as a fallback
+    const interval = setInterval(refreshTasks, 30000)
+    
+    return () => clearInterval(interval)
+  }, [(session?.user as any)?.id])
 
   const addTask = async () => {
     if (!title.trim()) {
@@ -291,7 +374,7 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/tasks/${id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           completed: !task.completed,
@@ -639,10 +722,11 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-2 sm:space-x-4">
-              <h1 className={`text-lg sm:text-xl font-bold ${
+              <h1 className={`text-base sm:text-xl font-bold ${
                 darkMode ? 'text-white' : 'text-gray-900'
               }`}>
-                ✨ <span className="text-gradient">Simple ToDo</span>
+                ✨ <span className="hidden sm:inline text-gradient">Simple ToDo</span>
+                <span className="sm:hidden text-gradient">ToDo</span>
               </h1>
               <div className="relative hidden sm:block">
                 <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 ${
@@ -738,6 +822,7 @@ export default function Home() {
                 {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
 
+              
               <button
                 onClick={() => router.push('/account')}
                 className={`p-2 rounded-lg transition-colors ${
@@ -1279,7 +1364,7 @@ export default function Home() {
                                   localStorage.setItem('readMessageCounts', JSON.stringify(newReadCounts))
                                   router.push(`/tasks/${task.id}`)
                                 }}
-                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 relative ${
+                                className={`opacity-100 p-2 rounded-lg transition-all flex-shrink-0 relative ${
                                   darkMode 
                                     ? 'text-gray-300 hover:text-indigo-400 hover:bg-gray-700' 
                                     : 'text-gray-600 hover:text-indigo-600 hover:bg-gray-100'
@@ -1300,7 +1385,7 @@ export default function Home() {
                                 <button
                                   onClick={() => shareTask(task.id)}
                                   disabled={sharingTaskId === task.id || !!task.importedFromTaskId}
-                                  className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 hover:share-glow ${
+                                  className={`opacity-100 p-2 rounded-lg transition-all flex-shrink-0 hover:share-glow ${
                                     task.importedFromTaskId
                                       ? 'opacity-50 cursor-not-allowed'
                                       : darkMode 
@@ -1345,7 +1430,7 @@ export default function Home() {
                               {/* 削除ボタン */}
                               <button
                                 onClick={() => deleteTask(task.id)}
-                                className={`opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
+                                className={`opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
                                   darkMode 
                                     ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
                                     : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'

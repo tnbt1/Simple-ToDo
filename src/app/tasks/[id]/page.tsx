@@ -55,6 +55,9 @@ interface TaskDetail {
       email: string
     }
   }>
+  _count?: {
+    threadMessages: number
+  }
 }
 
 interface ThreadMessage {
@@ -108,6 +111,40 @@ export default function TaskDetailPage() {
       fetchTaskAndMessages()
     }
   }, [taskId, session])
+  
+  // Separate effect for registering task viewer to handle imported tasks
+  useEffect(() => {
+    if (session && task) {
+      // Register this user as viewing the task
+      fetch(`/api/tasks/${taskId}/view`, {
+        method: 'POST',
+        credentials: 'same-origin'
+      }).catch(err => console.error('Failed to register task viewer:', err))
+      
+      // If this is an imported task, also register for the original
+      if (task.importedFromTaskId) {
+        fetch(`/api/tasks/${task.importedFromTaskId}/view`, {
+          method: 'POST',
+          credentials: 'same-origin'
+        }).catch(err => console.error('Failed to register original task viewer:', err))
+      }
+      
+      // Cleanup: unregister when leaving the page
+      return () => {
+        fetch(`/api/tasks/${taskId}/view`, {
+          method: 'DELETE',
+          credentials: 'same-origin'
+        }).catch(err => console.error('Failed to unregister task viewer:', err))
+        
+        if (task.importedFromTaskId) {
+          fetch(`/api/tasks/${task.importedFromTaskId}/view`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+          }).catch(err => console.error('Failed to unregister original task viewer:', err))
+        }
+      }
+    }
+  }, [taskId, session, task?.importedFromTaskId])
 
   useEffect(() => {
     if (task && isEditing) {
@@ -163,37 +200,65 @@ export default function TaskDetailPage() {
     if (!newMessage.trim() && selectedImages.length === 0) return
 
     setSendingMessage(true)
+    console.log('[sendMessage] Starting to send message')
+    console.log('[sendMessage] Message content:', newMessage)
+    console.log('[sendMessage] Message trimmed:', newMessage.trim())
+    console.log('[sendMessage] Images count:', selectedImages.length)
+    
     try {
       const formData = new FormData()
       // contentは空でも送信（画像のみの場合）
       formData.append('content', newMessage.trim())
+      console.log('[sendMessage] FormData content appended')
       
       selectedImages.forEach((image, index) => {
         formData.append(`images`, image)
+        console.log(`[sendMessage] Image ${index} appended:`, image.name)
       })
 
       // インポートされたタスクの場合は元のタスクIDを使用
       const threadTaskId = task?.importedFromTaskId || taskId
+      console.log('[sendMessage] Thread Task ID:', threadTaskId)
+      console.log('[sendMessage] Sending POST request...')
+      
       const response = await fetch(`/api/tasks/${threadTaskId}/thread`, {
         method: 'POST',
         body: formData,
+        credentials: 'same-origin', // クッキーを含める
       })
+      
+      console.log('[sendMessage] Response status:', response.status)
+      console.log('[sendMessage] Response ok:', response.ok)
 
       if (response.ok) {
         const newMsg = await response.json()
+        console.log('[sendMessage] New message received:', newMsg)
         setMessages([...messages, newMsg])
         setNewMessage('')
         setSelectedImages([])
+        console.log('[sendMessage] Message sent successfully')
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        const errorText = await response.text()
+        console.error('[sendMessage] Error response text:', errorText)
+        
+        let errorData
+        try {
+          errorData = JSON.parse(errorText)
+        } catch (e) {
+          errorData = { error: errorText || 'Unknown error' }
+        }
+        
         console.error('Failed to send message:', errorData)
         setError(`メッセージの送信に失敗しました: ${errorData.error || 'Unknown error'}`)
       }
     } catch (error) {
-      console.error('Error sending message:', error)
+      console.error('[sendMessage] Caught error:', error)
+      console.error('[sendMessage] Error type:', error instanceof Error ? error.constructor.name : typeof error)
+      console.error('[sendMessage] Error message:', error instanceof Error ? error.message : String(error))
       setError('メッセージの送信に失敗しました')
     } finally {
       setSendingMessage(false)
+      console.log('[sendMessage] Finished')
     }
   }
 
@@ -300,6 +365,31 @@ export default function TaskDetailPage() {
     }
   }
 
+  const handleStatusChange = async (newStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: newStatus,
+          completed: newStatus === 'COMPLETED'
+        })
+      })
+      
+      if (response.ok) {
+        const updatedTask = await response.json()
+        setTask(updatedTask)
+        setError(null)
+      } else {
+        const errorData = await response.json()
+        setError(errorData.error || 'ステータスの更新に失敗しました')
+      }
+    } catch (error) {
+      console.error('Failed to update status:', error)
+      setError('ステータスの更新中にエラーが発生しました')
+    }
+  }
+
   // Handle real-time updates
   const handleSSEMessage = useCallback((event: MessageEvent) => {
     try {
@@ -307,8 +397,37 @@ export default function TaskDetailPage() {
       
       // Check both current task ID and original task ID for imported tasks
       const threadTaskId = task?.importedFromTaskId || taskId
-      if (data.type === 'thread-message' && (data.taskId === taskId || data.taskId === threadTaskId)) {
-        setMessages(prevMessages => [...prevMessages, data.message])
+      
+      switch (data.type) {
+        case 'thread-message-added':
+          // Real-time thread message
+          if (data.taskId === taskId || data.taskId === threadTaskId) {
+            setMessages(prevMessages => {
+              // Check if message already exists to avoid duplicates
+              const exists = prevMessages.some(msg => msg.id === data.message.id)
+              if (!exists) {
+                return [...prevMessages, data.message]
+              }
+              return prevMessages
+            })
+          }
+          break
+        
+        case 'task-updated':
+        case 'shared-task-updated':
+          // Update task details when modified
+          if (data.task && (data.task.id === taskId || 
+              (task?.importedFromTaskId && data.task.id === task.importedFromTaskId))) {
+            setTask(prevTask => ({
+              ...prevTask,
+              ...data.task,
+              // 既存の関連情報を保持
+              _count: data.task._count || prevTask?._count,
+              sharedWith: data.task.sharedWith || prevTask?.sharedWith,
+              importedFromUser: data.task.importedFromUser || prevTask?.importedFromUser
+            }))
+          }
+          break
       }
     } catch (error) {
       console.error('Error handling SSE message:', error)
@@ -516,25 +635,7 @@ export default function TaskDetailPage() {
                     </label>
                     <select
                       value={task.status}
-                      onChange={async (e) => {
-                        const newStatus = e.target.value as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
-                        try {
-                          const response = await fetch(`/api/tasks/${taskId}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ 
-                              status: newStatus,
-                              completed: newStatus === 'COMPLETED'
-                            })
-                          })
-                          if (response.ok) {
-                            const updatedTask = await response.json()
-                            setTask(updatedTask)
-                          }
-                        } catch (error) {
-                          console.error('Failed to update status:', error)
-                        }
-                      }}
+                      onChange={(e) => handleStatusChange(e.target.value as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       disabled={task.user?.email !== session?.user?.email}
                     >

@@ -78,7 +78,7 @@ export async function PUT(request: NextRequest) {
       const filepath = join(uploadDir, filename)
       
       await writeFile(filepath, buffer)
-      updateData.image = `/uploads/avatars/${filename}`
+      updateData.image = `/api/uploads/avatars/${filename}`
     }
 
     const updatedUser = await prisma.user.update({

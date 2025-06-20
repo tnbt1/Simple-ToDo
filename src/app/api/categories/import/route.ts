@@ -92,26 +92,9 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // 共有関係を記録
-    const existingShare = await prisma.sharedCategory.findFirst({
-      where: {
-        shareId: sharedCategory.shareId,
-        sharedWithId: session.user.id
-      }
-    })
-
-    if (!existingShare) {
-      await prisma.sharedCategory.create({
-        data: {
-          category: sharedCategory.category,
-          categoryUniqueId: sharedCategory.categoryUniqueId,
-          ownerId: sharedCategory.ownerId,
-          sharedWithId: session.user.id,
-          shareId: sharedCategory.shareId,
-          permission: 'VIEW'
-        }
-      })
-    }
+    // インポート履歴を記録（SharedCategoryへの新規追加は行わない）
+    // shareIdはユニーク制約があるため、同じshareIdで複数のレコードを作成できない
+    // インポートの記録は、タスクの importedFromUserId と importedFromTaskId で管理する
 
     // リアルタイム通知
     importedTasks.forEach(task => {
@@ -128,6 +111,25 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error importing category:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    
+    // Prismaエラーの詳細を返す
+    if (error instanceof Error) {
+      if (error.message.includes('Unique constraint')) {
+        return NextResponse.json({ 
+          error: 'このカテゴリーは既にインポート済みです',
+          success: false 
+        }, { status: 409 })
+      }
+      
+      return NextResponse.json({ 
+        error: error.message || 'カテゴリーのインポート中にエラーが発生しました',
+        success: false 
+      }, { status: 500 })
+    }
+    
+    return NextResponse.json({ 
+      error: 'カテゴリーのインポート中にエラーが発生しました',
+      success: false 
+    }, { status: 500 })
   }
 }

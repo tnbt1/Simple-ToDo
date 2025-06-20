@@ -94,12 +94,22 @@ export default function SharedCategoryPage() {
         }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('インポートに失敗しました')
+        // サーバーからのエラーメッセージを使用
+        throw new Error(data.error || 'インポートに失敗しました')
       }
 
-      setImportSuccess(true)
+      // 成功レスポンスを確認
+      if (data.success) {
+        setImportSuccess(true)
+        console.log(`インポート成功: ${data.importedCount}個のタスクをインポートしました`)
+      } else {
+        throw new Error('インポート処理が完了しませんでした')
+      }
     } catch (err) {
+      console.error('Import error:', err)
       setError(err instanceof Error ? err.message : 'インポートに失敗しました')
     } finally {
       setImporting(false)

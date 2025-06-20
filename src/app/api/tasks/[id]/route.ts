@@ -213,10 +213,12 @@ export async function PUT(
     }
 
     // Send real-time update to task owner
+    console.log('Sending task-updated event:', session.user.id)
     sendEventToUser(session.user.id, {
       type: 'task-updated',
       task
     })
+    console.log('Task-updated event sent')
 
     // If task is shared, send updates to all shared users
     if (task.isShared) {
@@ -233,12 +235,183 @@ export async function PUT(
       }
     }
 
+    // Check if this category is shared and notify shared users
+    if (task.category) {
+      const sharedCategories = await prisma.sharedCategory.findMany({
+        where: {
+          category: task.category,
+          ownerId: session.user.id
+        },
+        select: {
+          shareId: true,
+          sharedWithId: true
+        }
+      })
+
+      // Notify all users who have this category shared with them
+      for (const share of sharedCategories) {
+        sendEventToUser(share.sharedWithId, {
+          type: 'category-task-updated',
+          shareId: share.shareId,
+          task
+        })
+      }
+    }
+
     return NextResponse.json(task)
   } catch (error: unknown) {
     console.error("Error updating task:", error)
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: "Invalid JSON format" }, { status: 400 })
     }
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 })
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await getServerSession(authOptions as any) as Session | null
+  
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const { status, completed } = body
+
+    // Validate status if provided
+    if (status !== undefined && !['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(status)) {
+      return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
+    }
+
+    // Update only status and completed fields
+    await prisma.task.update({
+      where: {
+        id,
+        userId: session.user.id
+      },
+      data: {
+        status,
+        completed
+      }
+    })
+
+    // Fetch the complete updated task with all relations
+    const task = await prisma.task.findFirst({
+      where: {
+        id,
+        userId: session.user.id
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        dueDate: true,
+        priority: true,
+        status: true,
+        completed: true,
+        category: true,
+        isShared: true,
+        shareId: true,
+        createdAt: true,
+        updatedAt: true,
+        position: true,
+        tags: true,
+        userId: true,
+        importedFromTaskId: true,
+        importedFromUserId: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        _count: {
+          select: {
+            threadMessages: true
+          }
+        },
+        importedFromUser: {
+          select: {
+            name: true,
+            email: true
+          }
+        },
+        sharedWith: {
+          select: {
+            sharedWithId: true,
+            sharedBy: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    })
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found after update" }, { status: 404 })
+    }
+
+    // Send real-time update to task owner
+    console.log('Sending task-updated event:', session.user.id)
+    sendEventToUser(session.user.id, {
+      type: 'task-updated',
+      task
+    })
+    console.log('Task-updated event sent')
+
+    // If task is shared, send updates to all shared users
+    if (task.isShared) {
+      const sharedWith = await prisma.sharedTask.findMany({
+        where: { taskId: task.id },
+        select: { sharedWithId: true }
+      })
+      
+      for (const share of sharedWith) {
+        sendEventToUser(share.sharedWithId, {
+          type: 'shared-task-updated',
+          task
+        })
+      }
+    }
+
+    // Check if this category is shared and notify shared users
+    if (task.category) {
+      const sharedCategories = await prisma.sharedCategory.findMany({
+        where: {
+          category: task.category,
+          ownerId: session.user.id
+        },
+        select: {
+          shareId: true,
+          sharedWithId: true
+        }
+      })
+
+      // Notify all users who have this category shared with them
+      for (const share of sharedCategories) {
+        sendEventToUser(share.sharedWithId, {
+          type: 'category-task-updated',
+          shareId: share.shareId,
+          task
+        })
+      }
+    }
+
+    return NextResponse.json(task)
+  } catch (error: unknown) {
+    console.error("Error updating task status:", error)
     if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
       return NextResponse.json({ error: "Task not found" }, { status: 404 })
     }
@@ -258,6 +431,22 @@ export async function DELETE(
 
   try {
     const { id } = await params
+    
+    // Get task details before deletion to check category
+    const taskToDelete = await prisma.task.findUnique({
+      where: {
+        id,
+        userId: session.user.id
+      },
+      select: {
+        category: true
+      }
+    })
+
+    if (!taskToDelete) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 })
+    }
+
     await prisma.task.delete({
       where: {
         id,
@@ -266,10 +455,35 @@ export async function DELETE(
     })
 
     // Send real-time update
+    console.log('Sending task-deleted event:', session.user.id)
     sendEventToUser(session.user.id, {
       type: 'task-deleted',
       taskId: id
     })
+    console.log('Task-deleted event sent')
+
+    // Check if this category is shared and notify shared users
+    if (taskToDelete.category) {
+      const sharedCategories = await prisma.sharedCategory.findMany({
+        where: {
+          category: taskToDelete.category,
+          ownerId: session.user.id
+        },
+        select: {
+          shareId: true,
+          sharedWithId: true
+        }
+      })
+
+      // Notify all users who have this category shared with them
+      for (const share of sharedCategories) {
+        sendEventToUser(share.sharedWithId, {
+          type: 'category-task-deleted',
+          shareId: share.shareId,
+          taskId: id
+        })
+      }
+    }
 
     return NextResponse.json({ success: true })
   } catch (error: unknown) {

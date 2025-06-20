@@ -8,7 +8,7 @@ import { join } from 'path'
 import { nanoid } from 'nanoid'
 import { withLogging, getRequestId, createPrismaContext } from '@/lib/api-wrapper'
 import { logSharingEvent } from '@/lib/logger'
-import { sendEventToUser } from '../../../../../lib/sse-manager'
+import { sendEventToUser, sendEventToTaskViewers } from '../../../../../lib/sse-manager'
 
 // スレッドメッセージを取得
 export const GET = withLogging(async (
@@ -79,11 +79,15 @@ export const POST = withLogging(async (
   const session = await getServerSession(authOptions as any) as Session | null
   const requestId = getRequestId(request)
   
+  console.log('[Thread POST] Session:', session?.user?.email)
+  
   if (!session?.user?.email) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
   }
 
+  try {
     const { id: taskId } = await context.params
+    console.log('[Thread POST] Task ID:', taskId)
 
     // ユーザーの存在確認
     const user = await prisma.user.findUnique({
@@ -92,8 +96,11 @@ export const POST = withLogging(async (
     })
 
     if (!user) {
+      console.log('[Thread POST] User not found:', session.user.email)
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 })
     }
+    
+    console.log('[Thread POST] User found:', user.id)
 
     // タスクの存在確認とアクセス権限確認
     const task = await prisma.task.findFirst({
@@ -115,6 +122,9 @@ export const POST = withLogging(async (
     // FormDataからデータを取得
     const formData = await request.formData()
     const content = formData.get('content') as string
+    console.log('[Thread POST] Content:', content)
+    console.log('[Thread POST] Content type:', typeof content)
+    console.log('[Thread POST] Content trimmed:', content?.trim())
     
     // 画像処理（簡易実装）
     const images = formData.getAll('images') as File[]
@@ -213,29 +223,36 @@ export const POST = withLogging(async (
       }
     }
 
-    // Send real-time update to task owner
-    sendEventToUser(task.userId, {
-      type: 'thread-message',
+    // Send real-time update to all users viewing this task
+    sendEventToTaskViewers(taskId, {
+      type: 'thread-message-added',
       taskId,
       message
     })
-
-    // If shared, send to all shared users
+    
+    // Also send to all users viewing imported tasks (if this is a shared task)
     if (task.isShared) {
-      const sharedWith = await prisma.sharedTask.findMany({
-        where: { taskId },
-        select: { sharedWithId: true },
+      const importedTasks = await prisma.task.findMany({
+        where: { 
+          importedFromTaskId: taskId 
+        },
+        select: { id: true },
         ...createPrismaContext(requestId)
       })
       
-      for (const share of sharedWith) {
-        sendEventToUser(share.sharedWithId, {
-          type: 'thread-message',
-          taskId,
+      for (const importedTask of importedTasks) {
+        sendEventToTaskViewers(importedTask.id, {
+          type: 'thread-message-added',
+          taskId: importedTask.id, // Send with the imported task's ID
           message
         })
       }
     }
 
+    console.log('[Thread POST] Message created successfully:', message.id)
     return NextResponse.json(message)
+  } catch (error) {
+    console.error('[Thread POST] Error:', error)
+    throw error
+  }
 }, { requireAuth: true, logAuth: true })
