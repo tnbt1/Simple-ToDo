@@ -8,6 +8,7 @@ import { Calendar, Clock, CheckCircle2, Circle, AlertCircle, Copy, Loader2, Home
 import { formatDate, getDaysUntilDue } from '@/lib/utils'
 import Link from 'next/link'
 import { useSSE } from '@/lib/sse-client'
+import { useSmartPolling } from '@/hooks/useSmartPolling'
 
 interface SharedTask {
   id: string
@@ -158,8 +159,36 @@ export default function SharedCategoryPage() {
   }, [shareId])
 
   // Subscribe to SSE
-  useSSE('/api/events', {
-    onMessage: handleSSEMessage
+  const [sseConnected, setSseConnected] = useState(false)
+  const { connectionState } = useSSE((session?.user as any)?.id ? '/api/events' : '', {
+    onMessage: handleSSEMessage,
+    onOpen: () => setSseConnected(true),
+    onError: () => setSseConnected(false)
+  })
+  
+  // Smart polling for shared category updates
+  const handleSmartPollingUpdate = useCallback((data: { tasks: SharedTask[] }) => {
+    console.log('[SharedCategory SmartPolling] Received update with', data.tasks.length, 'tasks')
+    
+    setCategoryInfo(prev => {
+      if (!prev) return prev
+      
+      // Update tasks from polling response
+      const updatedTasks = data.tasks.filter(task => task.category === prev.category)
+      
+      return {
+        ...prev,
+        tasks: updatedTasks
+      }
+    })
+  }, [])
+  
+  useSmartPolling({
+    enabled: !!(session?.user as any)?.id && !sseConnected && !!categoryInfo,
+    interval: 5000,
+    onUpdate: handleSmartPollingUpdate,
+    taskIds: categoryInfo?.tasks.map(t => t.id) || [],
+    categories: categoryInfo ? [categoryInfo.category] : []
   })
 
   const getPriorityColor = (priority: string) => {

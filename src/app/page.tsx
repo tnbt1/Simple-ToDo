@@ -28,6 +28,7 @@ import {
 import { Button } from '../components/ui/button'
 import { formatDate, getDaysUntilDue } from '../lib/utils'
 import { useSSE } from '../lib/sse-client'
+import { useSmartPolling } from '../hooks/useSmartPolling'
 
 interface Task {
   id: string
@@ -338,27 +339,54 @@ export default function Home() {
     console.log('SSE connection state:', connectionState)
   }, [connectionState])
 
-  // Fallback: Periodically refresh tasks to ensure sync
-  useEffect(() => {
-    if (!(session?.user as any)?.id) return
-
-    const refreshTasks = async () => {
-      try {
-        const response = await fetch('/api/tasks')
-        if (response.ok) {
-          const latestTasks = await response.json()
-          setTasks(latestTasks)
-        }
-      } catch (error) {
-        console.error('Error refreshing tasks:', error)
-      }
-    }
-
-    // Refresh every 30 seconds as a fallback
-    const interval = setInterval(refreshTasks, 30000)
+  // Smart polling for real-time updates when SSE is disconnected
+  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks])
+  const taskCategories = useMemo(() => 
+    [...new Set(tasks.filter(t => t.category).map(t => t.category!))]
+  , [tasks])
+  
+  const handleSmartPollingUpdate = useCallback((data: { tasks: Task[] }) => {
+    console.log('[SmartPolling] Received update with', data.tasks.length, 'tasks')
     
-    return () => clearInterval(interval)
-  }, [(session?.user as any)?.id])
+    setTasks(currentTasks => {
+      // Create a map of current tasks for quick lookup
+      const currentTaskMap = new Map(currentTasks.map(t => [t.id, t]))
+      
+      // Update or add tasks from the polling response
+      data.tasks.forEach(newTask => {
+        const existingTask = currentTaskMap.get(newTask.id)
+        if (existingTask) {
+          // Update existing task
+          currentTaskMap.set(newTask.id, {
+            ...existingTask,
+            ...newTask,
+            _count: existingTask._count || newTask._count
+          })
+        } else {
+          // Add new task
+          currentTaskMap.set(newTask.id, newTask)
+        }
+      })
+      
+      // Check for deleted tasks (tasks that exist locally but not in the response)
+      const responseTaskIds = new Set(data.tasks.map(t => t.id))
+      const updatedTasks = Array.from(currentTaskMap.values()).filter(task => {
+        // Keep task if it's in the response or if it's not being tracked
+        return responseTaskIds.has(task.id) || !taskIds.includes(task.id)
+      })
+      
+      return updatedTasks
+    })
+  }, [taskIds])
+  
+  // Use smart polling when SSE is disconnected
+  useSmartPolling({
+    enabled: !!(session?.user as any)?.id && !sseConnected,
+    interval: 5000, // Poll every 5 seconds when SSE is disconnected
+    onUpdate: handleSmartPollingUpdate,
+    taskIds,
+    categories: taskCategories
+  })
 
   const addTask = async () => {
     if (!title.trim()) {
