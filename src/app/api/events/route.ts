@@ -30,9 +30,13 @@ export async function GET(request: NextRequest) {
   // Track if the connection is still active
   let isActive = true
   let heartbeatInterval: NodeJS.Timeout | null = null
+  let isClosed = false
   
   // Clean up function
   const cleanup = () => {
+    if (isClosed) return // Prevent double cleanup
+    isClosed = true
+    
     console.log('SSE cleanup for user:', userId)
     isActive = false
     
@@ -45,10 +49,15 @@ export async function GET(request: NextRequest) {
     // Unregister client
     unregisterClient(userId)
     
-    // Close writer
-    writer.close().catch((error) => {
-      console.error('Error closing writer:', error)
-    })
+    // Close writer only if not already closed
+    if (writer.desiredSize !== null) {
+      writer.close().catch((error) => {
+        // Ignore ERR_INVALID_STATE errors which occur when already closed
+        if (error?.code !== 'ERR_INVALID_STATE') {
+          console.error('Error closing writer:', error)
+        }
+      })
+    }
   }
   
   // Handle client disconnect
