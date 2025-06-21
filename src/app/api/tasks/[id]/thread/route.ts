@@ -67,6 +67,32 @@ export const GET = withLogging(async (
       }
     }
 
+    // カテゴリー経由でインポートされたタスクの場合もチェック
+    if (!task) {
+      // 元のタスクを取得
+      const originalTask = await prisma.task.findUnique({
+        where: { id: taskId },
+        ...createPrismaContext(requestId)
+      })
+      
+      if (originalTask && originalTask.category) {
+        // ユーザーがこのカテゴリーからタスクをインポートしているか確認
+        const importedCategoryTask = await prisma.task.findFirst({
+          where: {
+            userId: user.id,
+            category: originalTask.category,
+            originalUniqueId: originalTask.uniqueId
+          },
+          ...createPrismaContext(requestId)
+        })
+        
+        if (importedCategoryTask) {
+          // カテゴリー経由でインポートされたタスクの場合、元のタスクへのアクセスを許可
+          task = originalTask
+        }
+      }
+    }
+
     if (!task) {
       return NextResponse.json({ error: 'タスクが見つかりません' }, { status: 404 })
     }
@@ -154,6 +180,43 @@ export const POST = withLogging(async (
           where: { id: taskId },
           ...createPrismaContext(requestId)
         })
+      }
+    }
+
+    // カテゴリー経由でインポートされたタスクの場合もチェック
+    if (!task) {
+      console.log('[Thread POST] Checking if task was imported via category')
+      // 元のタスクを取得（uniqueIdを含める）
+      const originalTask = await prisma.task.findUnique({
+        where: { id: taskId },
+        select: {
+          id: true,
+          title: true,
+          category: true,
+          uniqueId: true,
+          userId: true,
+          isShared: true
+        },
+        ...createPrismaContext(requestId)
+      })
+      
+      if (originalTask && originalTask.category) {
+        console.log('[Thread POST] Original task found with category:', originalTask.category, 'uniqueId:', originalTask.uniqueId)
+        // ユーザーがこのカテゴリーからタスクをインポートしているか確認
+        const importedCategoryTask = await prisma.task.findFirst({
+          where: {
+            userId: user.id,
+            category: originalTask.category,
+            originalUniqueId: originalTask.uniqueId
+          },
+          ...createPrismaContext(requestId)
+        })
+        
+        if (importedCategoryTask) {
+          console.log('[Thread POST] User has imported this task via category, allowing access')
+          // カテゴリー経由でインポートされたタスクの場合、元のタスクへのアクセスを許可
+          task = originalTask as any // Type assertion needed since we're using select
+        }
       }
     }
 

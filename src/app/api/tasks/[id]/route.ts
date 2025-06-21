@@ -277,6 +277,14 @@ export async function PUT(
             task
           })
           console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
+          
+          // Also send to viewers of this specific shared category page
+          console.log(`[Task Update] Broadcasting to viewers of share:${share.shareId}`)
+          await sendEventToTaskViewers(`share:${share.shareId}`, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          })
         } catch (error) {
           console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
         }
@@ -453,6 +461,14 @@ export async function PATCH(
             task
           })
           console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
+          
+          // Also send to viewers of this specific shared category page
+          console.log(`[Task Update] Broadcasting to viewers of share:${share.shareId}`)
+          await sendEventToTaskViewers(`share:${share.shareId}`, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          })
         } catch (error) {
           console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
         }
@@ -536,6 +552,13 @@ export async function DELETE(
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
         await sendEventToUser(share.sharedWithId, {
+          type: 'category-task-deleted',
+          shareId: share.shareId,
+          taskId: id
+        })
+        
+        // Also send to viewers of this specific shared category page
+        await sendEventToTaskViewers(`share:${share.shareId}`, {
           type: 'category-task-deleted',
           shareId: share.shareId,
           taskId: id

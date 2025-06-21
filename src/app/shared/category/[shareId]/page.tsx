@@ -33,6 +33,7 @@ interface CategoryInfo {
     name?: string | null
     email: string
   }
+  ownerId: string
   tasks: SharedTask[]
 }
 
@@ -58,6 +59,22 @@ export default function SharedCategoryPage() {
   useEffect(() => {
     if (status === 'authenticated') {
       fetchSharedCategory()
+      
+      // Register as viewing this shared category
+      fetch(`/api/shared/category/${shareId}/view`, {
+        method: 'POST'
+      }).then(() => {
+        console.log('[SharedCategory] Registered as viewer for shareId:', shareId)
+      }).catch(error => {
+        console.error('[SharedCategory] Failed to register as viewer:', error)
+      })
+      
+      // Cleanup: unregister when leaving
+      return () => {
+        fetch(`/api/shared/category/${shareId}/view`, {
+          method: 'DELETE'
+        }).catch(() => {}) // Ignore errors on cleanup
+      }
     }
   }, [shareId, status])
 
@@ -121,10 +138,19 @@ export default function SharedCategoryPage() {
   const handleSSEMessage = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data)
+      console.log('[SharedCategory] Received SSE event:', data.type, 'shareId in event:', data.shareId, 'current shareId:', shareId)
       
       if (data.type === 'category-task-added' && data.shareId === shareId) {
+        console.log('[SharedCategory] Processing category-task-added for this shareId:', data)
         setCategoryInfo(prev => {
           if (!prev) return prev
+          // Check if task already exists to prevent duplicates
+          const taskExists = prev.tasks.some(task => task.id === data.task.id)
+          if (taskExists) {
+            console.log('[SharedCategory] Task already exists, skipping:', data.task.id)
+            return prev
+          }
+          console.log('[SharedCategory] Adding new task:', data.task.id, data.task.title)
           return {
             ...prev,
             tasks: [...prev.tasks, data.task]
@@ -153,10 +179,34 @@ export default function SharedCategoryPage() {
           }
         })
       }
+      
+      // Also handle when tasks are added to the category (without shareId)
+      if (data.type === 'task-created' && categoryInfo && data.task.category === categoryInfo.category) {
+        console.log('[SharedCategory] Task created in this category:', data.task)
+        setCategoryInfo(prev => {
+          if (!prev) return prev
+          // Check if this task belongs to the category owner
+          const isOwnerTask = data.task.userId === prev.ownerId
+          if (!isOwnerTask) {
+            console.log('[SharedCategory] Task is not from the category owner, skipping')
+            return prev
+          }
+          // Check if task already exists
+          const taskExists = prev.tasks.some(task => task.id === data.task.id)
+          if (taskExists) {
+            console.log('[SharedCategory] Task already exists, skipping:', data.task.id)
+            return prev
+          }
+          return {
+            ...prev,
+            tasks: [...prev.tasks, data.task]
+          }
+        })
+      }
     } catch (error) {
       console.error('Error handling SSE message:', error)
     }
-  }, [shareId])
+  }, [shareId, categoryInfo])
 
   // Subscribe to SSE
   const [sseConnected, setSseConnected] = useState(false)

@@ -51,6 +51,8 @@ export async function GET(
         category: true,
         createdAt: true,
         updatedAt: true,
+        uniqueId: true,
+        userId: true,
         _count: {
           select: {
             threadMessages: true
@@ -68,6 +70,7 @@ export async function GET(
     return NextResponse.json({
       category: sharedCategory.category,
       owner: sharedCategory.owner,
+      ownerId: sharedCategory.ownerId,
       tasks
     })
   } catch (error) {

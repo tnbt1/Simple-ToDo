@@ -259,9 +259,27 @@ export const POST = withLogging(async (request: NextRequest) => {
           task
         })
         console.log(`[Task Create] Successfully sent category-task-added event to user ${share.sharedWithId}`)
+        
+        // Also send to viewers of this specific shared category page
+        console.log(`[Task Create] Broadcasting to viewers of share:${share.shareId}`)
+        await sendEventToTaskViewers(`share:${share.shareId}`, {
+          type: 'category-task-added',
+          shareId: share.shareId,
+          task
+        })
       } catch (error) {
         console.error(`[Task Create] Error sending events to user ${share.sharedWithId}:`, error)
       }
+    }
+    
+    // Also broadcast to anyone viewing this specific shared category page
+    for (const share of sharedCategories) {
+      console.log(`[Task Create] Broadcasting to viewers of shared category ${share.shareId}`)
+      await sendEventToTaskViewers(`share:${share.shareId}`, {
+        type: 'category-task-added',
+        shareId: share.shareId,
+        task
+      })
     }
   }
 

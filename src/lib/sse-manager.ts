@@ -138,11 +138,11 @@ export function unregisterTaskViewer(taskId: string, userId: string) {
 export async function sendEventToTaskViewers(taskId: string, event: any) {
   const viewers = taskViewers.get(taskId)
   if (!viewers || viewers.size === 0) {
-    console.log(`[SSE] No viewers for task ${taskId}`)
+    console.log(`[SSE] No viewers for task/share ${taskId}`)
     return
   }
   
-  console.log(`[SSE] Broadcasting to ${viewers.size} viewers of task ${taskId}. Event type:`, event.type)
+  console.log(`[SSE] Broadcasting to ${viewers.size} viewers of ${taskId}. Event type: ${event.type}, Viewers:`, Array.from(viewers))
   const message = `data: ${JSON.stringify(event)}\n\n`
   
   let successCount = 0
@@ -154,7 +154,7 @@ export async function sendEventToTaskViewers(taskId: string, event: any) {
       try {
         await client.write(message)
         successCount++
-        console.log(`[SSE] Event sent to user ${userId} viewing task ${taskId}`)
+        console.log(`[SSE] Event sent to user ${userId} viewing ${taskId}`)
       } catch (error) {
         failureCount++
         console.error(`[SSE] Error sending to user ${userId}:`, error)
@@ -163,10 +163,15 @@ export async function sendEventToTaskViewers(taskId: string, event: any) {
         viewers.delete(userId)
       }
     } else {
-      console.log(`[SSE] No active connection for viewer ${userId} of task ${taskId}`)
+      console.log(`[SSE] No active connection for viewer ${userId} of ${taskId}`)
       viewers.delete(userId)
     }
   }
   
-  console.log(`[SSE] Broadcast complete for task ${taskId}. Success: ${successCount}, Failed: ${failureCount}`)
+  console.log(`[SSE] Broadcast complete for ${taskId}. Success: ${successCount}, Failed: ${failureCount}`)
+  
+  // If this was for a share: prefix, also log current state
+  if (taskId.startsWith('share:')) {
+    console.log(`[SSE] Current viewers for ${taskId}:`, viewers.size > 0 ? Array.from(viewers) : 'none')
+  }
 }

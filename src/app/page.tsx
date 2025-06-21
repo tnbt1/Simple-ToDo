@@ -259,8 +259,9 @@ export default function Home() {
           break
         
         case 'shared-category-task-created':
-          // Add new task created in shared category
-          setTasks(prevTasks => [...prevTasks, data.task])
+          // This event is for notification only - the task belongs to another user
+          // Do not add it to the current user's task list
+          console.log('Shared category task created notification:', data.task)
           break
           
         case 'category-task-added':
