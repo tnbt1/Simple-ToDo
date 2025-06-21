@@ -28,24 +28,25 @@ export async function sendEventToUser(userId: string, event: any) {
     userId, 
     eventSummary, 
     hasClient: clients.has(userId),
-    totalClients: clients.size 
+    totalClients: clients.size,
+    allClientIds: Array.from(clients.keys())
   })
   
   const client = clients.get(userId)
   if (client) {
     try {
       const message = `data: ${JSON.stringify(event)}\n\n`
-      console.log('[SSE] Sending message to user:', userId, 'Event type:', event.type)
+      console.log('[SSE] Attempting to send message to user:', userId, 'Event type:', event.type, 'Message length:', message.length)
       await client.write(message)
-      console.log('[SSE] Message sent successfully to user:', userId)
+      console.log('[SSE] Message sent successfully to user:', userId, 'Event:', event.type)
     } catch (error) {
-      console.error('[SSE] Error sending message to user:', userId, error)
+      console.error('[SSE] Error sending message to user:', userId, 'Error:', error)
       // Client disconnected
       clients.delete(userId)
-      console.log('[SSE] Removed disconnected client:', userId)
+      console.log('[SSE] Removed disconnected client:', userId, 'Remaining clients:', clients.size)
     }
   } else {
-    console.log('[SSE] No active client connection for userId:', userId)
+    console.log('[SSE] No active client connection for userId:', userId, 'Active clients:', Array.from(clients.keys()))
   }
 }
 

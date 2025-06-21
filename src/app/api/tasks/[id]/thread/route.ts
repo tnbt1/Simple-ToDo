@@ -125,9 +125,12 @@ export const POST = withLogging(async (
   const session = await getServerSession(authOptions as any) as Session | null
   const requestId = getRequestId(request)
   
+  console.log('[Thread POST] ========== START ==========')
   console.log('[Thread POST] Session:', session?.user?.email)
+  console.log('[Thread POST] Request ID:', requestId)
   
   if (!session?.user?.email) {
+    console.log('[Thread POST] No session, returning 401')
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
   }
 
@@ -149,6 +152,7 @@ export const POST = withLogging(async (
     console.log('[Thread POST] User found:', user.id)
 
     // タスクの存在確認とアクセス権限確認
+    console.log('[Thread POST] Checking task access for user:', user.id)
     // まず直接タスクを探す
     let task = await prisma.task.findFirst({
       where: {
@@ -161,6 +165,8 @@ export const POST = withLogging(async (
       },
       ...createPrismaContext(requestId)
     })
+    
+    console.log('[Thread POST] Direct task search result:', task ? 'Found' : 'Not found')
 
     // 直接見つからない場合、このタスクIDを元タスクとしてインポートしたタスクがあるか確認
     if (!task) {
@@ -356,9 +362,13 @@ export const POST = withLogging(async (
     }
 
     console.log('[Thread POST] Message created successfully:', message.id)
+    console.log('[Thread POST] Task owner:', task.userId)
+    console.log('[Thread POST] Message sender:', user.id)
+    console.log('[Thread POST] ========== END ==========')
     return NextResponse.json(message)
   } catch (error) {
     console.error('[Thread POST] Error:', error)
+    console.log('[Thread POST] ========== ERROR END ==========')
     throw error
   }
 }, { requireAuth: true, logAuth: true })

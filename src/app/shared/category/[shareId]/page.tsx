@@ -61,13 +61,23 @@ export default function SharedCategoryPage() {
       fetchSharedCategory()
       
       // Register as viewing this shared category
-      fetch(`/api/shared/category/${shareId}/view`, {
-        method: 'POST'
-      }).then(() => {
-        console.log('[SharedCategory] Registered as viewer for shareId:', shareId)
-      }).catch(error => {
-        console.error('[SharedCategory] Failed to register as viewer:', error)
-      })
+      const registerViewer = async () => {
+        try {
+          const response = await fetch(`/api/shared/category/${shareId}/view`, {
+            method: 'POST'
+          })
+          if (!response.ok) {
+            throw new Error(`Failed to register: ${response.statusText}`)
+          }
+          console.log('[SharedCategory] Successfully registered as viewer for shareId:', shareId)
+        } catch (error) {
+          console.error('[SharedCategory] Failed to register as viewer:', error)
+          // Retry after 2 seconds
+          setTimeout(registerViewer, 2000)
+        }
+      }
+      
+      registerViewer()
       
       // Cleanup: unregister when leaving
       return () => {
@@ -139,6 +149,11 @@ export default function SharedCategoryPage() {
     try {
       const data = JSON.parse(event.data)
       console.log('[SharedCategory] Received SSE event:', data.type, 'shareId in event:', data.shareId, 'current shareId:', shareId)
+      
+      // Log all events for debugging
+      if (data.type && data.type.includes('category')) {
+        console.log('[SharedCategory] Category-related event details:', JSON.stringify(data))
+      }
       
       if (data.type === 'category-task-added' && data.shareId === shareId) {
         console.log('[SharedCategory] Processing category-task-added for this shareId:', data)

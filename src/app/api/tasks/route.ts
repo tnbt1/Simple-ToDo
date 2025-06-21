@@ -224,6 +224,8 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   // Check if this category is shared and notify shared users
   if (task.category) {
+    console.log(`[Task Create] Checking shared categories for category '${task.category}' owned by user ${session.user.id}`)
+    
     const sharedCategories = await prisma.sharedCategory.findMany({
       where: {
         category: task.category,

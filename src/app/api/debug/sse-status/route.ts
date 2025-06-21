@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Only allow in development mode
-  if (process.env.NODE_ENV === 'production') {
+  // Allow in development mode or with special header
+  if (process.env.NODE_ENV === 'production' && request.headers.get('x-debug-key') !== 'debug-sse-2024') {
     return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
   }
 
