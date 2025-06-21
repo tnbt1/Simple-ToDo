@@ -213,15 +213,15 @@ export async function PUT(
     }
 
     // Send real-time update to task owner
-    console.log('Sending task-updated event:', session.user.id)
+    console.log('[Task Update] Sending task-updated event to owner:', session.user.id)
     await sendEventToUser(session.user.id, {
       type: 'task-updated',
       task
     })
-    console.log('Task-updated event sent')
+    console.log('[Task Update] Task-updated event sent to owner successfully')
 
     // Send update to all users viewing this task
-    console.log('Sending updates to task viewers for task:', task.id)
+    console.log('[Task Update] Sending updates to all task viewers for task:', task.id)
     await sendEventToTaskViewers(task.id, {
       type: 'task-updated',
       task
@@ -234,12 +234,18 @@ export async function PUT(
         select: { sharedWithId: true }
       })
       
-      console.log(`Sending shared-task-updated to ${sharedWith.length} shared users`)
+      console.log(`[Task Update] Sending shared-task-updated to ${sharedWith.length} shared users`)
       for (const share of sharedWith) {
-        await sendEventToUser(share.sharedWithId, {
-          type: 'shared-task-updated',
-          task
-        })
+        try {
+          console.log(`[Task Update] Sending shared-task-updated event to user ${share.sharedWithId}`)
+          await sendEventToUser(share.sharedWithId, {
+            type: 'shared-task-updated',
+            task
+          })
+          console.log(`[Task Update] Successfully sent shared-task-updated event to user ${share.sharedWithId}`)
+        } catch (error) {
+          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
+        }
       }
     }
 
@@ -256,14 +262,24 @@ export async function PUT(
         }
       })
 
-      console.log(`Sending category-task-updated to ${sharedCategories.length} category viewers`)
+      console.log(`[Task Update] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
+      sharedCategories.forEach(share => {
+        console.log(`[Task Update] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
+      })
+      
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
-        await sendEventToUser(share.sharedWithId, {
-          type: 'category-task-updated',
-          shareId: share.shareId,
-          task
-        })
+        try {
+          console.log(`[Task Update] Sending category-task-updated event to user ${share.sharedWithId} with shareId ${share.shareId}`)
+          await sendEventToUser(share.sharedWithId, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          })
+          console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
+        } catch (error) {
+          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
+        }
       }
     }
 
@@ -373,15 +389,15 @@ export async function PATCH(
     }
 
     // Send real-time update to task owner
-    console.log('Sending task-updated event:', session.user.id)
+    console.log('[Task Update] Sending task-updated event to owner:', session.user.id)
     await sendEventToUser(session.user.id, {
       type: 'task-updated',
       task
     })
-    console.log('Task-updated event sent')
+    console.log('[Task Update] Task-updated event sent to owner successfully')
 
     // Send update to all users viewing this task
-    console.log('Sending updates to task viewers for task:', task.id)
+    console.log('[Task Update] Sending updates to all task viewers for task:', task.id)
     await sendEventToTaskViewers(task.id, {
       type: 'task-updated',
       task
@@ -394,12 +410,18 @@ export async function PATCH(
         select: { sharedWithId: true }
       })
       
-      console.log(`Sending shared-task-updated to ${sharedWith.length} shared users`)
+      console.log(`[Task Update] Sending shared-task-updated to ${sharedWith.length} shared users`)
       for (const share of sharedWith) {
-        await sendEventToUser(share.sharedWithId, {
-          type: 'shared-task-updated',
-          task
-        })
+        try {
+          console.log(`[Task Update] Sending shared-task-updated event to user ${share.sharedWithId}`)
+          await sendEventToUser(share.sharedWithId, {
+            type: 'shared-task-updated',
+            task
+          })
+          console.log(`[Task Update] Successfully sent shared-task-updated event to user ${share.sharedWithId}`)
+        } catch (error) {
+          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
+        }
       }
     }
 
@@ -416,14 +438,24 @@ export async function PATCH(
         }
       })
 
-      console.log(`Sending category-task-updated to ${sharedCategories.length} category viewers`)
+      console.log(`[Task Update] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
+      sharedCategories.forEach(share => {
+        console.log(`[Task Update] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
+      })
+      
       // Notify all users who have this category shared with them
       for (const share of sharedCategories) {
-        await sendEventToUser(share.sharedWithId, {
-          type: 'category-task-updated',
-          shareId: share.shareId,
-          task
-        })
+        try {
+          console.log(`[Task Update] Sending category-task-updated event to user ${share.sharedWithId} with shareId ${share.shareId}`)
+          await sendEventToUser(share.sharedWithId, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          })
+          console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
+        } catch (error) {
+          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
+        }
       }
     }
 

@@ -205,20 +205,21 @@ export const POST = withLogging(async (request: NextRequest) => {
   })
 
   // Send real-time update
-  console.log('Sending task-created event for user:', session.user.id)
+  console.log('[Task Create] Sending task-created event to owner:', session.user.id)
   await sendEventToUser(session.user.id, {
     type: 'task-created',
     task
   })
-  console.log('Task-created event sent')
+  console.log('[Task Create] Task-created event sent to owner successfully')
 
   // Send update to all users viewing tasks in this category
   if (task.category) {
-    console.log('Sending updates to category viewers for category:', task.category)
+    console.log('[Task Create] Sending updates to category viewers for category:', task.category)
     await sendEventToTaskViewers(`category:${task.category}`, {
       type: 'task-created',
       task
     })
+    console.log('[Task Create] Updates sent to category viewers')
   }
 
   // Check if this category is shared and notify shared users
@@ -235,20 +236,32 @@ export const POST = withLogging(async (request: NextRequest) => {
       ...createPrismaContext(requestId)
     })
 
-    console.log(`Sending shared-category-task-created to ${sharedCategories.length} category viewers`)
+    console.log(`[Task Create] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
+    sharedCategories.forEach(share => {
+      console.log(`[Task Create] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
+    })
+    
     // Notify all users who have this category shared with them
     for (const share of sharedCategories) {
-      await sendEventToUser(share.sharedWithId, {
-        type: 'shared-category-task-created',
-        task
-      })
+      try {
+        console.log(`[Task Create] Sending shared-category-task-created event to user ${share.sharedWithId}`)
+        await sendEventToUser(share.sharedWithId, {
+          type: 'shared-category-task-created',
+          task
+        })
+        console.log(`[Task Create] Successfully sent shared-category-task-created event to user ${share.sharedWithId}`)
 
-      // Also send category-task-added event with shareId for the shared category page
-      await sendEventToUser(share.sharedWithId, {
-        type: 'category-task-added',
-        shareId: share.shareId,
-        task
-      })
+        // Also send category-task-added event with shareId for the shared category page
+        console.log(`[Task Create] Sending category-task-added event to user ${share.sharedWithId} with shareId ${share.shareId}`)
+        await sendEventToUser(share.sharedWithId, {
+          type: 'category-task-added',
+          shareId: share.shareId,
+          task
+        })
+        console.log(`[Task Create] Successfully sent category-task-added event to user ${share.sharedWithId}`)
+      } catch (error) {
+        console.error(`[Task Create] Error sending events to user ${share.sharedWithId}:`, error)
+      }
     }
   }
 

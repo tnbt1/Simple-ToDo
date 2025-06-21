@@ -261,21 +261,58 @@ export default function Home() {
           // Add new task created in shared category
           setTasks(prevTasks => [...prevTasks, data.task])
           break
+          
+        case 'category-task-added':
+          // New task added to a shared category (for shared category page)
+          console.log('Received category-task-added event:', data)
+          setTasks(prevTasks => {
+            const exists = prevTasks.some(task => task.id === data.task.id)
+            if (!exists) {
+              console.log('Adding new task from shared category:', data.task.id)
+              return [...prevTasks, data.task]
+            }
+            return prevTasks
+          })
+          break
+          
+        case 'category-task-updated':
+          // Task updated in a shared category
+          console.log('Received category-task-updated event:', data)
+          setTasks(prevTasks => 
+            prevTasks.map(task => 
+              task.id === data.task.id 
+                ? { ...task, ...data.task, _count: task._count || data.task._count }
+                : task
+            )
+          )
+          break
+          
+        case 'category-task-deleted':
+          // Task deleted from a shared category
+          console.log('Received category-task-deleted event:', data)
+          setTasks(prevTasks => 
+            prevTasks.filter(task => task.id !== data.taskId)
+          )
+          break
       }
     } catch (error) {
       console.error('Error handling SSE message:', error)
     }
   }, [])
 
-  // Auto refresh every 30 seconds as fallback
+  // Auto refresh every 10 seconds as fallback when SSE is disconnected
   useEffect(() => {
     if (session && !sseConnected) {
+      console.log('SSE disconnected, starting auto-refresh fallback')
       const interval = setInterval(() => {
         console.log('Auto-refreshing tasks (SSE fallback)')
         fetchTasks()
-      }, 30000)
+      }, 10000) // Reduced from 30s to 10s for better responsiveness
       
-      return () => clearInterval(interval)
+      return () => {
+        console.log('Stopping auto-refresh fallback')
+        clearInterval(interval)
+      }
     }
   }, [session, sseConnected])
 
@@ -292,8 +329,8 @@ export default function Home() {
       setSseConnected(false)
     },
     reconnectDelay: 1000,
-    maxReconnectDelay: 30000,
-    maxReconnectAttempts: 10
+    maxReconnectDelay: 15000, // Reduced from 30s to 15s
+    maxReconnectAttempts: 20 // Increased from 10 to 20
   })
 
   // Debug SSE connection state

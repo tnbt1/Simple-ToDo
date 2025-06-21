@@ -35,7 +35,8 @@ export const GET = withLogging(async (
     }
 
     // タスクの存在確認とアクセス権限確認
-    const task = await prisma.task.findFirst({
+    // まず直接タスクを探す
+    let task = await prisma.task.findFirst({
       where: {
         id: taskId,
         OR: [
@@ -46,6 +47,25 @@ export const GET = withLogging(async (
       },
       ...createPrismaContext(requestId)
     })
+
+    // 直接見つからない場合、このタスクIDを元タスクとしてインポートしたタスクがあるか確認
+    if (!task) {
+      const importedTask = await prisma.task.findFirst({
+        where: {
+          importedFromTaskId: taskId,
+          userId: user.id
+        },
+        ...createPrismaContext(requestId)
+      })
+      
+      if (importedTask) {
+        // ユーザーがこのタスクをインポートしている場合、元のタスクへのアクセスを許可
+        task = await prisma.task.findUnique({
+          where: { id: taskId },
+          ...createPrismaContext(requestId)
+        })
+      }
+    }
 
     if (!task) {
       return NextResponse.json({ error: 'タスクが見つかりません' }, { status: 404 })
@@ -103,7 +123,8 @@ export const POST = withLogging(async (
     console.log('[Thread POST] User found:', user.id)
 
     // タスクの存在確認とアクセス権限確認
-    const task = await prisma.task.findFirst({
+    // まず直接タスクを探す
+    let task = await prisma.task.findFirst({
       where: {
         id: taskId,
         OR: [
@@ -115,7 +136,29 @@ export const POST = withLogging(async (
       ...createPrismaContext(requestId)
     })
 
+    // 直接見つからない場合、このタスクIDを元タスクとしてインポートしたタスクがあるか確認
     if (!task) {
+      console.log('[Thread POST] Direct task not found, checking if user has imported task')
+      const importedTask = await prisma.task.findFirst({
+        where: {
+          importedFromTaskId: taskId,
+          userId: user.id
+        },
+        ...createPrismaContext(requestId)
+      })
+      
+      if (importedTask) {
+        console.log('[Thread POST] User has imported this task, allowing access')
+        // ユーザーがこのタスクをインポートしている場合、元のタスクへのアクセスを許可
+        task = await prisma.task.findUnique({
+          where: { id: taskId },
+          ...createPrismaContext(requestId)
+        })
+      }
+    }
+
+    if (!task) {
+      console.log('[Thread POST] Task not found or access denied')
       return NextResponse.json({ error: 'タスクが見つかりません' }, { status: 404 })
     }
 
