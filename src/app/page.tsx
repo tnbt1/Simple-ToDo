@@ -478,13 +478,13 @@ export default function Home() {
       if (error.name === 'AbortError') {
         console.log('[AddTask] Request timed out, but proceeding optimistically')
         // タイムアウトしても楽観的に成功として扱う
-        const optimisticTask = {
+        const optimisticTask: Task = {
           id: `temp-${Date.now()}`,
           title: title.trim(),
-          description: description.trim() || null,
-          dueDate: dueDate || null,
+          description: description.trim() || undefined,
+          dueDate: dueDate || undefined,
           priority,
-          category: finalCategory || null,
+          category: finalCategory || undefined,
           status: 'PENDING' as const,
           completed: false,
           position: 0,
