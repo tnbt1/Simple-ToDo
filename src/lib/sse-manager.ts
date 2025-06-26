@@ -1,12 +1,12 @@
 // Store active connections
 // Use global to persist across hot reloads in development
 declare global {
-  var sseClients: Map<string, { write: (data: string) => Promise<void>, close: () => void }> | undefined
+  var sseClients: Map<string, Array<{ clientId: string, write: (data: string) => Promise<void>, close: () => void }>> | undefined
   var sseTaskViewers: Map<string, Set<string>> | undefined // taskId -> Set of userIds
 }
 
 if (!global.sseClients) {
-  global.sseClients = new Map<string, { write: (data: string) => Promise<void>, close: () => void }>()
+  global.sseClients = new Map<string, Array<{ clientId: string, write: (data: string) => Promise<void>, close: () => void }>>()
 }
 
 if (!global.sseTaskViewers) {
@@ -24,29 +24,46 @@ export async function sendEventToUser(userId: string, event: any) {
     category: event.task?.category,
     shareId: event.shareId
   }
+  
+  const userClients = clients.get(userId)
   console.log('[SSE] sendEventToUser called:', { 
     userId, 
     eventSummary, 
-    hasClient: clients.has(userId),
-    totalClients: clients.size,
-    allClientIds: Array.from(clients.keys())
+    hasClient: !!userClients,
+    clientCount: userClients?.length || 0,
+    totalUsers: clients.size,
+    allUserIds: Array.from(clients.keys())
   })
   
-  const client = clients.get(userId)
-  if (client) {
-    try {
-      const message = `data: ${JSON.stringify(event)}\n\n`
-      console.log('[SSE] Attempting to send message to user:', userId, 'Event type:', event.type, 'Message length:', message.length)
-      await client.write(message)
-      console.log('[SSE] Message sent successfully to user:', userId, 'Event:', event.type)
-    } catch (error) {
-      console.error('[SSE] Error sending message to user:', userId, 'Error:', error)
-      // Client disconnected
-      clients.delete(userId)
-      console.log('[SSE] Removed disconnected client:', userId, 'Remaining clients:', clients.size)
+  if (userClients && userClients.length > 0) {
+    const message = `data: ${JSON.stringify(event)}\n\n`
+    console.log('[SSE] Attempting to send message to', userClients.length, 'client(s) for user:', userId, 'Event type:', event.type)
+    
+    // Send to all clients for this user
+    const disconnectedClients: string[] = []
+    for (const client of userClients) {
+      try {
+        await client.write(message)
+        console.log('[SSE] Message sent successfully to client', client.clientId, 'for user:', userId)
+      } catch (error) {
+        console.error('[SSE] Error sending message to client', client.clientId, 'for user:', userId, 'Error:', error)
+        disconnectedClients.push(client.clientId)
+      }
+    }
+    
+    // Remove disconnected clients
+    if (disconnectedClients.length > 0) {
+      const remainingClients = userClients.filter(c => !disconnectedClients.includes(c.clientId))
+      if (remainingClients.length > 0) {
+        clients.set(userId, remainingClients)
+        console.log('[SSE] Removed', disconnectedClients.length, 'disconnected client(s) for user:', userId, 'Remaining:', remainingClients.length)
+      } else {
+        clients.delete(userId)
+        console.log('[SSE] All clients disconnected for user:', userId, 'Removing from clients map')
+      }
     }
   } else {
-    console.log('[SSE] No active client connection for userId:', userId, 'Active clients:', Array.from(clients.keys()))
+    console.log('[SSE] No active client connections for userId:', userId, 'Active users:', Array.from(clients.keys()))
   }
 }
 
@@ -54,12 +71,24 @@ export async function sendEventToUser(userId: string, event: any) {
 export async function broadcastEvent(event: any) {
   const message = `data: ${JSON.stringify(event)}\n\n`
   
-  for (const [userId, client] of clients.entries()) {
-    try {
-      await client.write(message)
-    } catch (error) {
-      // Client disconnected
-      clients.delete(userId)
+  for (const [userId, userClients] of clients.entries()) {
+    const disconnectedClients: string[] = []
+    for (const client of userClients) {
+      try {
+        await client.write(message)
+      } catch (error) {
+        disconnectedClients.push(client.clientId)
+      }
+    }
+    
+    // Remove disconnected clients
+    if (disconnectedClients.length > 0) {
+      const remainingClients = userClients.filter(c => !disconnectedClients.includes(c.clientId))
+      if (remainingClients.length > 0) {
+        clients.set(userId, remainingClients)
+      } else {
+        clients.delete(userId)
+      }
     }
   }
 }
@@ -68,42 +97,92 @@ export async function broadcastEvent(event: any) {
 export function registerClient(userId: string, client: { write: (data: string) => Promise<void>, close: () => void }) {
   console.log('[SSE] Registering client:', userId)
   
-  // Clean up any existing client for this user
-  if (clients.has(userId)) {
-    console.log('[SSE] Existing client found for user, cleaning up old connection:', userId)
-    unregisterClient(userId)
-  }
+  // Generate a unique client ID
+  const clientId = `${userId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   
-  clients.set(userId, client)
-  console.log('[SSE] Client registered. Total clients:', clients.size, 'Active users:', Array.from(clients.keys()))
+  // Get existing clients for this user or create new array
+  let userClients = clients.get(userId) || []
+  
+  // Add the new client
+  userClients.push({
+    clientId,
+    write: client.write,
+    close: client.close
+  })
+  
+  clients.set(userId, userClients)
+  console.log('[SSE] Client registered. Client ID:', clientId, 'Total clients for user:', userClients.length, 'Total users:', clients.size)
+  
+  return clientId
 }
 
 // Helper function to unregister a client
-export function unregisterClient(userId: string) {
-  console.log('[SSE] Unregistering client:', userId)
-  const client = clients.get(userId)
-  if (client) {
-    try {
-      client.close()
-    } catch (error) {
-      console.error('[SSE] Error closing client:', error)
-    }
-  }
-  clients.delete(userId)
+export function unregisterClient(userId: string, clientId?: string) {
+  console.log('[SSE] Unregistering client:', userId, 'Client ID:', clientId || 'all')
   
-  // Also remove this user from all task viewer lists
-  let removedFromTasks = 0
-  for (const [taskId, viewers] of taskViewers.entries()) {
-    if (viewers.has(userId)) {
-      viewers.delete(userId)
-      removedFromTasks++
-      if (viewers.size === 0) {
-        taskViewers.delete(taskId)
+  const userClients = clients.get(userId)
+  if (!userClients) {
+    console.log('[SSE] No clients found for user:', userId)
+    return
+  }
+  
+  if (clientId) {
+    // Remove specific client
+    const clientToRemove = userClients.find(c => c.clientId === clientId)
+    if (clientToRemove) {
+      try {
+        clientToRemove.close()
+      } catch (error) {
+        console.error('[SSE] Error closing client:', error)
       }
     }
+    
+    const remainingClients = userClients.filter(c => c.clientId !== clientId)
+    if (remainingClients.length > 0) {
+      clients.set(userId, remainingClients)
+      console.log('[SSE] Client unregistered. Remaining clients for user:', remainingClients.length)
+    } else {
+      clients.delete(userId)
+      console.log('[SSE] All clients unregistered for user:', userId)
+      
+      // Also remove this user from all task viewer lists
+      let removedFromTasks = 0
+      for (const [taskId, viewers] of taskViewers.entries()) {
+        if (viewers.has(userId)) {
+          viewers.delete(userId)
+          removedFromTasks++
+          if (viewers.size === 0) {
+            taskViewers.delete(taskId)
+          }
+        }
+      }
+      console.log('[SSE] Removed from tasks:', removedFromTasks)
+    }
+  } else {
+    // Remove all clients for this user
+    for (const client of userClients) {
+      try {
+        client.close()
+      } catch (error) {
+        console.error('[SSE] Error closing client:', error)
+      }
+    }
+    clients.delete(userId)
+    
+    // Also remove this user from all task viewer lists
+    let removedFromTasks = 0
+    for (const [taskId, viewers] of taskViewers.entries()) {
+      if (viewers.has(userId)) {
+        viewers.delete(userId)
+        removedFromTasks++
+        if (viewers.size === 0) {
+          taskViewers.delete(taskId)
+        }
+      }
+    }
+    
+    console.log('[SSE] All clients unregistered. Total users:', clients.size, 'Removed from tasks:', removedFromTasks)
   }
-  
-  console.log('[SSE] Client unregistered. Total clients:', clients.size, 'Removed from tasks:', removedFromTasks)
 }
 
 // Helper function to get all connected clients
@@ -150,21 +229,21 @@ export async function sendEventToTaskViewers(taskId: string, event: any) {
   let failureCount = 0
   
   for (const userId of viewers) {
-    const client = clients.get(userId)
-    if (client) {
-      try {
-        await client.write(message)
-        successCount++
-        console.log(`[SSE] Event sent to user ${userId} viewing ${taskId}`)
-      } catch (error) {
-        failureCount++
-        console.error(`[SSE] Error sending to user ${userId}:`, error)
-        // Client disconnected
-        clients.delete(userId)
-        viewers.delete(userId)
+    const userClients = clients.get(userId)
+    if (userClients && userClients.length > 0) {
+      // Send to all clients for this user
+      for (const client of userClients) {
+        try {
+          await client.write(message)
+          successCount++
+          console.log(`[SSE] Event sent to user ${userId} (client ${client.clientId}) viewing ${taskId}`)
+        } catch (error) {
+          failureCount++
+          console.error(`[SSE] Error sending to user ${userId} (client ${client.clientId}):`, error)
+        }
       }
     } else {
-      console.log(`[SSE] No active connection for viewer ${userId} of ${taskId}`)
+      console.log(`[SSE] No active connections for viewer ${userId} of ${taskId}`)
       viewers.delete(userId)
     }
   }

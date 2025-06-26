@@ -4,6 +4,7 @@ import type { Session } from "next-auth"
 import { authOptions } from "../../../../lib/auth"
 import { prisma } from "../../../../lib/prisma"
 import { sendEventToUser, sendEventToTaskViewers } from "../../../../lib/sse-manager"
+import { withLogging } from "../../../../lib/api-wrapper"
 
 export async function GET(
   request: NextRequest,
@@ -89,10 +90,10 @@ export async function GET(
   }
 }
 
-export async function PUT(
+export const PUT = withLogging(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const session = await getServerSession(authOptions as any) as Session | null
   
   if (!session?.user?.id) {
@@ -302,12 +303,12 @@ export async function PUT(
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
-}
+}, { requireAuth: true, logAuth: true })
 
-export async function PATCH(
+export const PATCH = withLogging(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const session = await getServerSession(authOptions as any) as Session | null
   
   if (!session?.user?.id) {
@@ -483,7 +484,7 @@ export async function PATCH(
     }
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
-}
+}, { requireAuth: true, logAuth: true })
 
 export async function DELETE(
   request: NextRequest,

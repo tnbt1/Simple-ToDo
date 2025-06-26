@@ -47,6 +47,18 @@ next-env.d.ts
 # Logs
 server.log
 /logs/
+*.log
 
 # Uploads
 /public/uploads/
+
+# Testing
+/playwright-report/
+/test-results/
+/tests/
+playwright.config.ts
+
+# Development files
+scripts-cleanup-plan.md
+test-password.js
+test-app.sh

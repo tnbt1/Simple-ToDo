@@ -97,8 +97,6 @@ services:
         echo '✅ PostgreSQL is ready!';
         echo '⏳ Waiting for database to be fully initialized...';
         sleep 5;
-        echo '🔧 Generating Prisma client...';
-        npx prisma generate;
         echo '🗄️ Setting up database schema...';
         echo '📋 Applying database migrations...';
         npx prisma migrate deploy;

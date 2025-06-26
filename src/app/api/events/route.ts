@@ -9,6 +9,16 @@ export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   console.log('SSE endpoint called')
+  
+  // Check if real-time updates are disabled
+  if (process.env.DISABLE_REALTIME_UPDATES === 'true') {
+    console.log('SSE endpoint: Real-time updates are disabled')
+    return new Response(JSON.stringify({ error: 'Real-time updates are disabled' }), { 
+      status: 503,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+  
   const session = await getServerSession(authOptions as any) as Session | null
   
   if (!session?.user?.id) {
@@ -31,6 +41,7 @@ export async function GET(request: NextRequest) {
   let isActive = true
   let heartbeatInterval: NodeJS.Timeout | null = null
   let isClosed = false
+  let clientId: string | null = null
   
   // Clean up function
   const cleanup = () => {
@@ -47,7 +58,11 @@ export async function GET(request: NextRequest) {
     }
     
     // Unregister client
-    unregisterClient(userId)
+    if (clientId) {
+      unregisterClient(userId, clientId)
+    } else {
+      unregisterClient(userId)
+    }
     
     // Close writer only if not already closed
     if (writer.desiredSize !== null) {
@@ -67,7 +82,7 @@ export async function GET(request: NextRequest) {
   ;(async () => {
     try {
       // Register the writer for this client
-      registerClient(userId, {
+      clientId = registerClient(userId, {
         write: async (data: string) => {
           if (!isActive) {
             console.log('Skipping write to inactive connection:', userId)
@@ -84,6 +99,8 @@ export async function GET(request: NextRequest) {
         },
         close: cleanup
       } as any)
+      
+      console.log('SSE client registered with ID:', clientId)
       
       // Send initial connection message
       if (isActive) {

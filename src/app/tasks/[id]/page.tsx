@@ -19,7 +19,8 @@ import {
   X,
   Edit2,
   Save,
-  XCircle
+  XCircle,
+  RefreshCw
 } from 'lucide-react'
 import { formatDate, getDaysUntilDue } from '@/lib/utils'
 import ImageModal from '@/components/ImageModal'
@@ -93,6 +94,7 @@ export default function TaskDetailPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalImage, setModalImage] = useState({ url: '', alt: '' })
   const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -334,12 +336,24 @@ export default function TaskDetailPage() {
   }
 
   const saveTaskEdits = async () => {
+    console.log('saveTaskEdits called')
     if (!editForm.title.trim()) {
       setError('タイトルは必須です')
       return
     }
 
+    setIsSaving(true)
+    setError(null)
+
     try {
+      console.log('Sending PUT request to:', `/api/tasks/${taskId}`)
+      console.log('Request body:', {
+        title: editForm.title.trim(),
+        description: editForm.description.trim() || null,
+        dueDate: editForm.dueDate || null,
+        priority: editForm.priority
+      })
+      
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -351,22 +365,31 @@ export default function TaskDetailPage() {
         })
       })
 
+      console.log('Response status:', response.status)
+      
       if (response.ok) {
         const updatedTask = await response.json()
+        console.log('Task updated successfully:', updatedTask)
         setTask(updatedTask)
         setIsEditing(false)
         setError(null)
       } else {
-        setError('更新に失敗しました')
+        const errorData = await response.json()
+        console.error('Update failed:', errorData)
+        setError(errorData.error || '更新に失敗しました')
       }
     } catch (error) {
       console.error('Failed to update task:', error)
       setError('更新中にエラーが発生しました')
+    } finally {
+      setIsSaving(false)
     }
   }
 
   const handleStatusChange = async (newStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
+    console.log('handleStatusChange called with status:', newStatus)
     try {
+      console.log('Sending PATCH request to:', `/api/tasks/${taskId}`)
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -376,12 +399,16 @@ export default function TaskDetailPage() {
         })
       })
       
+      console.log('Response status:', response.status)
+      
       if (response.ok) {
         const updatedTask = await response.json()
+        console.log('Status updated successfully:', updatedTask)
         setTask(updatedTask)
         setError(null)
       } else {
         const errorData = await response.json()
+        console.error('Status update failed:', errorData)
         setError(errorData.error || 'ステータスの更新に失敗しました')
       }
     } catch (error) {
@@ -555,9 +582,18 @@ export default function TaskDetailPage() {
                           <>
                             <button
                               onClick={saveTaskEdits}
-                              className="p-2 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+                              disabled={isSaving}
+                              className={`p-2 rounded-lg transition-colors ${
+                                isSaving 
+                                  ? 'text-gray-400 cursor-not-allowed' 
+                                  : 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                              }`}
                             >
-                              <Save className="h-5 w-5" />
+                              {isSaving ? (
+                                <RefreshCw className="h-5 w-5 animate-spin" />
+                              ) : (
+                                <Save className="h-5 w-5" />
+                              )}
                             </button>
                             <button
                               onClick={() => setIsEditing(false)}

@@ -23,7 +23,8 @@ import {
   Copy,
   Check,
   MessageSquare,
-  Settings
+  Settings,
+  RefreshCw
 } from 'lucide-react'
 import { Button } from '../components/ui/button'
 import { formatDate, getDaysUntilDue } from '../lib/utils'
@@ -100,6 +101,7 @@ export default function Home() {
   const [categoryShareUrls, setCategoryShareUrls] = useState<Record<string, string>>({})
   const [copiedCategoryName, setCopiedCategoryName] = useState<string | null>(null)
   const [sseConnected, setSseConnected] = useState(false)
+  const [deletingTasks, setDeletingTasks] = useState<Set<string>>(new Set())
 
   const router = useRouter()
 
@@ -259,9 +261,23 @@ export default function Home() {
           break
         
         case 'shared-category-task-created':
-          // This event is for notification only - the task belongs to another user
-          // Do not add it to the current user's task list
-          console.log('Shared category task created notification:', data.task)
+          // Add the new task from shared category to the task list
+          console.log('Shared category task created, adding to list:', data.task)
+          setTasks(prevTasks => {
+            const exists = prevTasks.some(task => task.id === data.task.id)
+            if (exists) {
+              console.log('Task already exists, skipping:', data.task.id)
+              return prevTasks
+            }
+            console.log('Adding new task from shared category:', data.task.id)
+            // タスクに共有元情報を追加
+            const taskWithSharedInfo = {
+              ...data.task,
+              importedFromUserId: data.task.userId,
+              importedFromUser: data.task.user
+            }
+            return [...prevTasks, taskWithSharedInfo]
+          })
           break
           
         case 'category-task-added':
@@ -302,14 +318,14 @@ export default function Home() {
     }
   }, [])
 
-  // Auto refresh every 10 seconds as fallback when SSE is disconnected
+  // Auto refresh every 30 seconds as fallback when SSE is disconnected
   useEffect(() => {
     if (session && !sseConnected) {
       console.log('SSE disconnected, starting auto-refresh fallback')
       const interval = setInterval(() => {
         console.log('Auto-refreshing tasks (SSE fallback)')
         fetchTasks()
-      }, 10000) // Reduced from 30s to 10s for better responsiveness
+      }, 30000) // 30 seconds to reduce server load
       
       return () => {
         console.log('Stopping auto-refresh fallback')
@@ -319,7 +335,7 @@ export default function Home() {
   }, [session, sseConnected])
 
   // Set up SSE connection with session check
-  const sseEnabled = !!(session?.user as any)?.id
+  const sseEnabled = !!(session?.user as any)?.id && process.env.NEXT_PUBLIC_DISABLE_REALTIME_UPDATES !== 'true'
   const { connectionState } = useSSE(sseEnabled ? '/api/events' : '', {
     onMessage: handleSSEMessage,
     onOpen: () => {
@@ -380,7 +396,9 @@ export default function Home() {
     })
   }, [taskIds])
   
-  // Use smart polling when SSE is disconnected
+  // Disable smart polling to reduce server load
+  // Smart polling was causing too many requests when combined with auto-refresh
+  /*
   useSmartPolling({
     enabled: !!(session?.user as any)?.id && !sseConnected,
     interval: 5000, // Poll every 5 seconds when SSE is disconnected
@@ -388,8 +406,10 @@ export default function Home() {
     taskIds,
     categories: taskCategories
   })
+  */
 
   const addTask = async () => {
+    console.log('[AddTask] Start - Title:', title)
     if (!title.trim()) {
       setError('タスクのタイトルを入力してください')
       return
@@ -406,6 +426,7 @@ export default function Home() {
     }
 
     try {
+      console.log('[AddTask] Sending request...')
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -418,10 +439,16 @@ export default function Home() {
         }),
       })
 
+      console.log('[AddTask] Response status:', response.status)
       const data = await response.json()
+      console.log('[AddTask] Response data:', data)
 
       if (response.ok) {
-        setTasks([...tasks, data])
+        console.log('[AddTask] Success - Adding task to state')
+        // タスクを即座にローカルステートに追加
+        setTasks(prevTasks => [...prevTasks, data])
+        
+        // フォームをリセット
         setTitle('')
         setDescription('')
         setDueDate('')
@@ -431,13 +458,19 @@ export default function Home() {
         setError(null)
         setShowNewCategoryInput(false)
         setNewCategory('')
+        
+        // fetchTasks() の呼び出しを削除
+        // SSEによりリアルタイムで同期されるため不要
+        console.log('[AddTask] Complete')
       } else {
+        console.log('[AddTask] Error response:', data)
         setError(data.error || 'タスクの作成に失敗しました')
       }
     } catch (error) {
-      console.error('Error creating task:', error)
+      console.error('[AddTask] Exception:', error)
       setError('ネットワークエラーが発生しました。再度お試しください。')
     } finally {
+      console.log('[AddTask] Setting isSubmitting to false')
       setIsSubmitting(false)
     }
   }
@@ -475,6 +508,9 @@ export default function Home() {
       return
     }
 
+    // 削除中の状態を設定
+    setDeletingTasks(prev => new Set(prev).add(id))
+
     try {
       const response = await fetch(`/api/tasks/${id}`, {
         method: 'DELETE',
@@ -483,6 +519,7 @@ export default function Home() {
       const data = await response.json()
 
       if (response.ok) {
+        // ローカル状態を即座に更新
         setTasks(tasks.filter(t => t.id !== id))
         setError(null)
       } else {
@@ -491,6 +528,13 @@ export default function Home() {
     } catch (error) {
       console.error('Error deleting task:', error)
       setError('ネットワークエラーが発生しました。再度お試しください。')
+    } finally {
+      // 削除中の状態を解除
+      setDeletingTasks(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(id)
+        return newSet
+      })
     }
   }
 
@@ -821,6 +865,21 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-2 sm:space-x-3">
+              {/* Manual refresh button */}
+              {!sseConnected && (
+                <button
+                  onClick={fetchTasks}
+                  className={`p-2 rounded-lg transition-colors ${
+                    darkMode
+                      ? 'hover:bg-gray-700 text-gray-300 hover:text-white'
+                      : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="手動で更新"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                </button>
+              )}
+              
               <div className="hidden sm:flex items-center space-x-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => setFilterStatus('all')}
@@ -1504,13 +1563,22 @@ export default function Home() {
                               {/* 削除ボタン */}
                               <button
                                 onClick={() => deleteTask(task.id)}
+                                disabled={deletingTasks.has(task.id)}
                                 className={`opacity-100 p-2 rounded-lg transition-all flex-shrink-0 ${
-                                  darkMode 
-                                    ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
-                                    : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
+                                  deletingTasks.has(task.id)
+                                    ? darkMode
+                                      ? 'text-gray-500 cursor-not-allowed'
+                                      : 'text-gray-400 cursor-not-allowed'
+                                    : darkMode 
+                                      ? 'text-gray-300 hover:text-red-400 hover:bg-gray-700' 
+                                      : 'text-gray-600 hover:text-red-600 hover:bg-gray-100'
                                 }`}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                {deletingTasks.has(task.id) ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
                               </button>
                             </div>
                           </div>
