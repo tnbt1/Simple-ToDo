@@ -103,6 +103,20 @@ export function registerClient(userId: string, client: { write: (data: string) =
   // Get existing clients for this user or create new array
   let userClients = clients.get(userId) || []
   
+  // Clean up old connections if too many (keep max 3 per user)
+  if (userClients.length >= 3) {
+    console.log('[SSE] Too many clients for user, cleaning up old connections:', userClients.length)
+    const oldClients = userClients.slice(0, userClients.length - 2)
+    for (const oldClient of oldClients) {
+      try {
+        oldClient.close()
+      } catch (error) {
+        console.error('[SSE] Error closing old client:', error)
+      }
+    }
+    userClients = userClients.slice(-2)
+  }
+  
   // Add the new client
   userClients.push({
     clientId,

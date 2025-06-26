@@ -427,6 +427,11 @@ export default function Home() {
 
     try {
       console.log('[AddTask] Sending request...')
+      
+      // タイムアウト処理を追加（5秒）
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      
       const response = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -437,7 +442,8 @@ export default function Home() {
           priority,
           category: finalCategory || null,
         }),
-      })
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeoutId))
 
       console.log('[AddTask] Response status:', response.status)
       const data = await response.json()
@@ -466,9 +472,45 @@ export default function Home() {
         console.log('[AddTask] Error response:', data)
         setError(data.error || 'タスクの作成に失敗しました')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[AddTask] Exception:', error)
-      setError('ネットワークエラーが発生しました。再度お試しください。')
+      
+      if (error.name === 'AbortError') {
+        console.log('[AddTask] Request timed out, but proceeding optimistically')
+        // タイムアウトしても楽観的に成功として扱う
+        const optimisticTask = {
+          id: `temp-${Date.now()}`,
+          title: title.trim(),
+          description: description.trim() || null,
+          dueDate: dueDate || null,
+          priority,
+          category: finalCategory || null,
+          status: 'PENDING' as const,
+          completed: false,
+          position: 0,
+          tags: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          _count: { threadMessages: 0 }
+        }
+        
+        setTasks(prevTasks => [...prevTasks, optimisticTask])
+        
+        // フォームをリセット
+        setTitle('')
+        setDescription('')
+        setDueDate('')
+        setPriority('MEDIUM')
+        setCategory('')
+        setShowForm(false)
+        setError(null)
+        setShowNewCategoryInput(false)
+        setNewCategory('')
+        
+        // 30秒後の自動更新で正しいデータに置き換わる
+      } else {
+        setError('ネットワークエラーが発生しました。再度お試しください。')
+      }
     } finally {
       console.log('[AddTask] Setting isSubmitting to false')
       setIsSubmitting(false)
@@ -1607,6 +1649,35 @@ export default function Home() {
               </span>
             )}
           </motion.div>
+        )}
+
+        {/* SSE Connection Indicator (development only) */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="fixed bottom-4 right-4 z-50">
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+              connectionState === 'open' 
+                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                : connectionState === 'connecting'
+                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${
+                connectionState === 'open'
+                  ? 'bg-green-500'
+                  : connectionState === 'connecting'
+                  ? 'bg-yellow-500 animate-pulse'
+                  : 'bg-red-500'
+              }`} />
+              <span>
+                {connectionState === 'open' 
+                  ? 'リアルタイム接続中'
+                  : connectionState === 'connecting'
+                  ? '接続中...'
+                  : 'オフライン (30秒毎に自動更新)'
+                }
+              </span>
+            </div>
+          </div>
         )}
       </main>
     </div>
