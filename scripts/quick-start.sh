@@ -23,6 +23,13 @@ fi
 echo "✅ Docker and Docker Compose are available"
 echo ""
 
+# Check script permissions (failsafe)
+if [ ! -x ./scripts/generate-secrets.sh ]; then
+    echo "🔧 Setting script permissions..."
+    chmod +x ./scripts/*.sh
+    echo "✅ Script permissions set"
+fi
+
 # 1. Environment File Setup
 echo "📋 Step 1: Environment Configuration"
 echo "====================================="
@@ -87,7 +94,7 @@ if [ "${REDIS_OPTIMIZE:-true}" = "true" ]; then
         read -p "🚀 Apply system optimizations? (Y/n): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Nn]$ ]]; then
-            echo "⏭️  Skipping optimization (Redis warnings will appear)"
+            echo "⏭️  Skipping optimization (Redis will show memory warnings)"
         else
             echo "🔑 System optimization requires sudo privileges..."
             if sudo -n true 2>/dev/null; then
