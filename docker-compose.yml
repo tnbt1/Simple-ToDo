@@ -65,6 +65,7 @@ services:
       cache_from:
         - node:20-alpine
     image: simple-todo-app:${APP_VERSION:-1.0.0}
+    pull_policy: never
     container_name: simple-todo-app
     restart: unless-stopped
     ports:
@@ -83,7 +84,7 @@ services:
       - todo-network
     volumes:
       - ./scripts:/app/scripts:ro
-      - ./logs:/app/logs
+      - logs_data:/app/logs
       - ./.env.logging:/app/.env.logging:ro
       - uploads_data:/app/public/uploads
     command: >
@@ -126,6 +127,7 @@ volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  logs_data:
 
 networks:
   todo-network:

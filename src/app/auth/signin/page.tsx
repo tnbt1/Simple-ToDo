@@ -159,14 +159,6 @@ export default function SignIn() {
               </Link>
             </p>
           </div>
-          
-          {/* テストアカウント情報 */}
-          <div className="mt-4 p-4 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 backdrop-blur-sm rounded-xl border border-blue-200/30">
-            <p className="text-xs text-blue-700 text-center">
-              <span className="font-medium">テストアカウント:</span><br/>
-              メール: test@example.com / パスワード: test123
-            </p>
-          </div>
         </div>
 
       </div>
