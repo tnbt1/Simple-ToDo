@@ -575,19 +575,17 @@ export default function Home() {
         )}
 
         {/* Add task button */}
-        <motion.button
+        <button
           onClick={() => setShowForm(true)}
           className={`mb-6 w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl font-medium transition-all transform hover:scale-[1.02] active:scale-95 btn-modern ${
             darkMode 
               ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25' 
               : 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white shadow-lg shadow-blue-500/30'
           }`}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.95 }}
         >
           <Plus className="h-5 w-5" />
           <span>新しいタスクを追加</span>
-        </motion.button>
+        </button>
 
         {/* Add task form */}
         <AnimatePresence>
@@ -606,7 +604,7 @@ export default function Home() {
                   onChange={(e) => setTitle(e.target.value)}
                   className={`w-full px-4 py-2 rounded-lg border transition-colors ${
                     darkMode 
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-300' 
+                      ? 'bg-gray-800 border-gray-600 text-white placeholder-gray-400' 
                       : 'bg-white border-gray-200 text-gray-900 placeholder-gray-600'
                   } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
@@ -618,7 +616,7 @@ export default function Home() {
                   rows={3}
                   className={`w-full px-4 py-2 rounded-lg border transition-colors ${
                     darkMode 
-                      ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-300' 
+                      ? 'bg-gray-800 border-gray-600 text-white placeholder-gray-400' 
                       : 'bg-white border-gray-200 text-gray-900 placeholder-gray-600'
                   } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 />
@@ -630,7 +628,7 @@ export default function Home() {
                     onChange={(e) => setDueDate(e.target.value)}
                     className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
                       darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        ? 'bg-gray-800 border-gray-600 text-white' 
                         : 'bg-white border-gray-200 text-gray-900'
                     } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   />
@@ -640,7 +638,7 @@ export default function Home() {
                     onChange={(e) => setPriority(e.target.value as 'LOW' | 'MEDIUM' | 'HIGH')}
                     className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
                       darkMode 
-                        ? 'bg-gray-700 border-gray-600 text-white' 
+                        ? 'bg-gray-800 border-gray-600 text-white' 
                         : 'bg-white border-gray-200 text-gray-900'
                     } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                   >
@@ -664,7 +662,7 @@ export default function Home() {
                           }}
                           className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
                             darkMode 
-                              ? 'bg-gray-700 border-gray-600 text-white' 
+                              ? 'bg-gray-800 border-gray-600 text-white' 
                               : 'bg-white border-gray-200 text-gray-900'
                           } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                         >
@@ -732,7 +730,9 @@ export default function Home() {
                     disabled={isSubmitting || !title.trim()}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       isSubmitting || !title.trim()
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        ? darkMode
+                          ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         : darkMode 
                           ? 'bg-blue-600 text-white hover:bg-blue-700' 
                           : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -784,12 +784,11 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="space-y-3"
+                  className={`glass rounded-lg p-3 sm:p-4 mb-4 ${
+                    darkMode ? 'bg-gray-800/50' : 'bg-white/70'
+                  }`}
                 >
                   {categoryName && (
-                    <div className={`glass rounded-lg p-3 sm:p-4 ${
-                      darkMode ? 'bg-gray-800/50' : 'bg-white/70'
-                    }`}>
                       <div className="flex items-center justify-between">
                         <button
                           onClick={() => toggleCategory(categoryName)}
@@ -896,12 +895,11 @@ export default function Home() {
                           </div>
                         )}
                       </div>
-                    </div>
+                      
                   )}
-                  
                   {!collapsedCategories.has(categoryName) && (
-                    <div className="space-y-3">
-                      {categoryTasks.map((task, index) => {
+                    <div className="mt-4 space-y-3">
+                          {categoryTasks.map((task, index) => {
                       const daysUntilDue = getDaysUntilDue(task.dueDate || null)
                       return (
                         <motion.div
@@ -1361,7 +1359,9 @@ export default function Home() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className={`mt-8 p-4 rounded-lg text-center text-sm glass fade-in`}
+            className={`mt-8 p-4 rounded-lg text-center text-sm glass fade-in ${
+              darkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}
           >
             {tasks.filter(task => task.completed).length} / {tasks.length} タスク完了
             {tasks.filter(task => !task.completed && task.dueDate && getDaysUntilDue(task.dueDate)! < 0).length > 0 && (

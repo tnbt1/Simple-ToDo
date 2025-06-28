@@ -61,11 +61,25 @@ export const POST = withLogging(async (request: NextRequest) => {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  // Verify user exists in database
+  console.log('Session user ID:', session.user.id)
+  const userExists = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+    ...createPrismaContext(requestId)
+  })
+
+  if (!userExists) {
+    console.error('User not found in database:', session.user.id)
+    return NextResponse.json({ error: "Invalid session - user not found" }, { status: 401 })
+  }
+
   const body = await request.json()
   const { title, description, dueDate, priority, status, tags, category, importedFromTaskId, importedFromUserId, originalUniqueId } = body
 
   console.log('Creating task with originalUniqueId:', originalUniqueId)
   console.log('Full request body:', JSON.stringify(body, null, 2))
+  console.log('User ID for task creation:', session.user.id)
 
   // Validate required fields
   if (!title || title.trim().length === 0) {
@@ -146,21 +160,33 @@ export const POST = withLogging(async (request: NextRequest) => {
 
   // カテゴリーの管理
   if (category && category.trim()) {
-    // カテゴリーが存在しない場合は作成
-    await prisma.category.upsert({
-      where: {
-        name_userId: {
+    try {
+      // カテゴリーが存在しない場合は作成
+      console.log('Upserting category:', category.trim(), 'for user:', session.user.id)
+      await prisma.category.upsert({
+        where: {
+          name_userId: {
+            name: category.trim(),
+            userId: session.user.id
+          }
+        },
+        update: {},
+        create: {
           name: category.trim(),
           userId: session.user.id
-        }
-      },
-      update: {},
-      create: {
-        name: category.trim(),
-        userId: session.user.id
-      },
-      ...createPrismaContext(requestId)
-    })
+        },
+        ...createPrismaContext(requestId)
+      })
+      console.log('Category upserted successfully')
+    } catch (error) {
+      console.error('Error upserting category:', error)
+      console.error('Category:', category.trim())
+      console.error('User ID:', session.user.id)
+      return NextResponse.json({ 
+        error: "Failed to create/update category", 
+        details: error instanceof Error ? error.message : "Unknown error" 
+      }, { status: 500 })
+    }
   }
 
   const task = await prisma.task.create({

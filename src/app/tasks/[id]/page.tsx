@@ -25,6 +25,7 @@ import {
 import { formatDate, getDaysUntilDue } from '@/lib/utils'
 import ImageModal from '@/components/ImageModal'
 import { useSSE } from '@/lib/sse-client'
+import { useDarkMode } from '@/hooks/useDarkMode'
 
 interface TaskDetail {
   id: string
@@ -81,6 +82,7 @@ export default function TaskDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { data: session } = useSession()
+  const { darkMode } = useDarkMode()
   const taskId = params.id as string
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -469,17 +471,26 @@ export default function TaskDetailPage() {
   })
 
   const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
-      case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-      case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
-      default: return 'bg-gray-50 text-gray-700 border-gray-200'
+    if (darkMode) {
+      switch (priority) {
+        case 'HIGH': return 'bg-red-900/30 text-red-300 border-red-700/50'
+        case 'MEDIUM': return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'
+        case 'LOW': return 'bg-green-900/30 text-green-300 border-green-700/50'
+        default: return 'bg-gray-700/30 text-gray-300 border-gray-600/50'
+      }
+    } else {
+      switch (priority) {
+        case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
+        case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+        case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
+        default: return 'bg-gray-50 text-gray-700 border-gray-200'
+      }
     }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     )
@@ -487,13 +498,17 @@ export default function TaskDetailPage() {
 
   if (error || !task) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
         <div className="text-center">
-          <h1 className="text-2xl font-semibold text-gray-900 mb-2">エラー</h1>
-          <p className="text-gray-600">{error || 'タスクが見つかりません'}</p>
+          <h1 className={`text-2xl font-semibold mb-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>エラー</h1>
+          <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{error || 'タスクが見つかりません'}</p>
           <button
             onClick={() => router.back()}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className={`mt-4 px-4 py-2 rounded-lg transition-colors ${
+              darkMode 
+                ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
             戻る
           </button>
@@ -505,13 +520,21 @@ export default function TaskDetailPage() {
   const daysUntilDue = getDaysUntilDue(task.dueDate || null)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <div className={`min-h-screen transition-colors duration-300 ${
+      darkMode 
+        ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' 
+        : 'bg-gradient-to-br from-blue-50 via-white to-indigo-50'
+    }`}>
       <div className="max-w-6xl mx-auto px-4 py-4 sm:py-8">
         {/* ヘッダー */}
         <div className="mb-6">
           <button
             onClick={() => router.back()}
-            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+            className={`flex items-center space-x-2 transition-colors ${
+              darkMode 
+                ? 'text-gray-300 hover:text-white' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
           >
             <ArrowLeft className="h-5 w-5" />
             <span>戻る</span>
@@ -523,7 +546,11 @@ export default function TaskDetailPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-xl shadow-lg p-6"
+            className={`rounded-xl shadow-lg p-6 ${
+              darkMode 
+                ? 'bg-gray-800/70 border border-gray-700/50' 
+                : 'bg-white'
+            }`}
           >
             <div className="mb-6">
               <div className="flex items-start space-x-4">
@@ -543,11 +570,15 @@ export default function TaskDetailPage() {
                           type="text"
                           value={editForm.title}
                           onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                          className="text-2xl font-semibold px-3 py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={`text-2xl font-semibold px-3 py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                         />
                       ) : (
                         <h1 className={`text-2xl font-semibold ${
-                          task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                          task.completed ? 'text-gray-500 line-through' : darkMode ? 'text-gray-100' : 'text-gray-900'
                         }`}>
                           {task.title}
                         </h1>
@@ -556,7 +587,11 @@ export default function TaskDetailPage() {
                         <select
                           value={editForm.priority}
                           onChange={(e) => setEditForm({ ...editForm, priority: e.target.value as 'LOW' | 'MEDIUM' | 'HIGH' })}
-                          className="px-3 py-1 text-sm font-medium rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className={`px-3 py-1 text-sm font-medium rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            darkMode 
+                              ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                              : 'bg-white border-gray-300 text-gray-900'
+                          }`}
                         >
                           <option value="HIGH">高</option>
                           <option value="MEDIUM">中</option>
@@ -570,7 +605,9 @@ export default function TaskDetailPage() {
                         </span>
                       )}
                     {task.isShared && (
-                      <span className="px-3 py-1 text-sm font-medium rounded-full bg-blue-100 text-blue-700">
+                      <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+                        darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-700'
+                      }`}>
                         <Share2 className="h-3 w-3 inline mr-1" />
                         共有中
                       </span>
@@ -586,7 +623,9 @@ export default function TaskDetailPage() {
                               className={`p-2 rounded-lg transition-colors ${
                                 isSaving 
                                   ? 'text-gray-400 cursor-not-allowed' 
-                                  : 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                                  : darkMode 
+                                    ? 'text-green-400 hover:text-green-300 hover:bg-green-900/20'
+                                    : 'text-green-600 hover:text-green-700 hover:bg-green-50'
                               }`}
                             >
                               {isSaving ? (
@@ -597,7 +636,11 @@ export default function TaskDetailPage() {
                             </button>
                             <button
                               onClick={() => setIsEditing(false)}
-                              className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                              className={`p-2 rounded-lg transition-colors ${
+                                darkMode 
+                                  ? 'text-red-400 hover:text-red-300 hover:bg-red-900/20' 
+                                  : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                              }`}
                             >
                               <XCircle className="h-5 w-5" />
                             </button>
@@ -605,7 +648,11 @@ export default function TaskDetailPage() {
                         ) : (
                           <button
                             onClick={() => setIsEditing(true)}
-                            className="p-2 text-gray-600 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                            className={`p-2 rounded-lg transition-colors ${
+                              darkMode 
+                                ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' 
+                                : 'text-gray-600 hover:text-gray-700 hover:bg-gray-100'
+                            }`}
                           >
                             <Edit2 className="h-5 w-5" />
                           </button>
@@ -616,17 +663,23 @@ export default function TaskDetailPage() {
 
                   {isEditing ? (
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">説明</label>
+                      <label className={`block text-sm font-medium mb-1 ${
+                        darkMode ? 'text-gray-300' : 'text-gray-700'
+                      }`}>説明</label>
                       <textarea
                         value={editForm.description}
                         onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          darkMode 
+                            ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
                         rows={3}
                       />
                     </div>
                   ) : task.description ? (
                     <p className={`text-lg mb-4 ${
-                      task.completed ? 'text-gray-400' : 'text-gray-600'
+                      task.completed ? 'text-gray-400' : darkMode ? 'text-gray-300' : 'text-gray-600'
                     }`}>
                       {task.description}
                     </p>
@@ -634,7 +687,9 @@ export default function TaskDetailPage() {
 
                   {task.category && (
                     <div className="mb-4">
-                      <span className="px-3 py-1 text-sm font-medium rounded-md bg-blue-50 text-blue-700">
+                      <span className={`px-3 py-1 text-sm font-medium rounded-md ${
+                        darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'
+                      }`}>
                         📁 {task.category}
                       </span>
                     </div>
@@ -642,19 +697,33 @@ export default function TaskDetailPage() {
 
                   {/* 共有情報の表示 */}
                   {task.importedFromUser && (
-                    <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
-                      <p className="text-sm text-blue-700">
+                    <div className={`mb-4 p-3 rounded-lg border ${
+                      darkMode 
+                        ? 'bg-blue-900/20 border-blue-800/50' 
+                        : 'bg-blue-50 border-blue-200'
+                    }`}>
+                      <p className={`text-sm ${
+                        darkMode ? 'text-blue-300' : 'text-blue-700'
+                      }`}>
                         📥 このタスクは <strong>{task.importedFromUser.name || task.importedFromUser.email}</strong> さんから共有されました
                       </p>
                     </div>
                   )}
                   
                   {task.sharedWith && task.sharedWith.length > 0 && (
-                    <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200">
-                      <p className="text-sm text-green-700 mb-2">
+                    <div className={`mb-4 p-3 rounded-lg border ${
+                      darkMode 
+                        ? 'bg-green-900/20 border-green-800/50' 
+                        : 'bg-green-50 border-green-200'
+                    }`}>
+                      <p className={`text-sm mb-2 ${
+                        darkMode ? 'text-green-300' : 'text-green-700'
+                      }`}>
                         🔗 以下のユーザーと共有中:
                       </p>
-                      <ul className="text-sm text-green-600 space-y-1">
+                      <ul className={`text-sm space-y-1 ${
+                        darkMode ? 'text-green-400' : 'text-green-600'
+                      }`}>
                         {task.sharedWith.map((share, index) => (
                           <li key={index}>
                             • {share.sharedBy.name || share.sharedBy.email}
@@ -666,13 +735,19 @@ export default function TaskDetailPage() {
 
                   {/* ステータス変更 */}
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={`block text-sm font-medium mb-2 ${
+                      darkMode ? 'text-gray-300' : 'text-gray-700'
+                    }`}>
                       ステータス
                     </label>
                     <select
                       value={task.status}
                       onChange={(e) => handleStatusChange(e.target.value as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        darkMode 
+                          ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                          : 'bg-white border-gray-300 text-gray-900'
+                      }`}
                       disabled={task.user?.email !== session?.user?.email}
                     >
                       <option value="PENDING">未着手</option>
@@ -680,7 +755,9 @@ export default function TaskDetailPage() {
                       <option value="COMPLETED">完了</option>
                     </select>
                     {task.user?.email !== session?.user?.email && (
-                      <p className="mt-1 text-xs text-gray-500">
+                      <p className={`mt-1 text-xs ${
+                        darkMode ? 'text-gray-400' : 'text-gray-500'
+                      }`}>
                         タスクの作成者のみステータスを変更できます
                       </p>
                     )}
@@ -688,17 +765,25 @@ export default function TaskDetailPage() {
 
                   {isEditing && (
                     <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">期限</label>
+                      <label className={`block text-sm font-medium mb-1 ${
+                        darkMode ? 'text-gray-300' : 'text-gray-700'
+                      }`}>期限</label>
                       <input
                         type="date"
                         value={editForm.dueDate}
                         onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
-                        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          darkMode 
+                            ? 'bg-gray-700 border-gray-600 text-gray-100' 
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
                       />
                     </div>
                   )}
 
-                  <div className="space-y-2 text-sm text-gray-500">
+                  <div className={`space-y-2 text-sm ${
+                    darkMode ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
                     {!isEditing && task.dueDate && (
                       <div className={`flex items-center space-x-2 ${
                         daysUntilDue !== null && daysUntilDue < 0 ? 'text-red-500' :
@@ -735,10 +820,18 @@ export default function TaskDetailPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="bg-white rounded-xl shadow-lg flex flex-col h-[600px]"
+            className={`rounded-xl shadow-lg flex flex-col h-[600px] ${
+              darkMode 
+                ? 'bg-gray-800/70 border border-gray-700/50' 
+                : 'bg-white'
+            }`}
           >
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-semibold flex items-center">
+            <div className={`p-4 border-b ${
+              darkMode ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <h2 className={`text-lg font-semibold flex items-center ${
+                darkMode ? 'text-gray-100' : 'text-gray-900'
+              }`}>
                 <MessageSquare className="h-5 w-5 mr-2" />
                 スレッド
               </h2>
@@ -747,8 +840,12 @@ export default function TaskDetailPage() {
             {/* メッセージリスト */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                <div className={`text-center py-8 ${
+                  darkMode ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  <MessageSquare className={`h-12 w-12 mx-auto mb-2 ${
+                    darkMode ? 'text-gray-600' : 'text-gray-300'
+                  }`} />
                   <p>まだメッセージがありません</p>
                 </div>
               ) : (
@@ -771,22 +868,28 @@ export default function TaskDetailPage() {
                             className="h-8 w-8 rounded-full"
                           />
                         ) : (
-                          <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center">
-                            <User className="h-4 w-4 text-gray-600" />
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                            darkMode ? 'bg-gray-600' : 'bg-gray-300'
+                          }`}>
+                            <User className={`h-4 w-4 ${
+                              darkMode ? 'text-gray-300' : 'text-gray-600'
+                            }`} />
                           </div>
                         )}
                       </div>
                       <div className={`flex-1 max-w-xs lg:max-w-md ${
                         message.user.email === session?.user?.email ? 'text-right' : ''
                       }`}>
-                        <div className="text-xs text-gray-500 mb-1">
+                        <div className={`text-xs mb-1 ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
                           {message.user.name || message.user.email} • {formatDate(message.createdAt)}
                         </div>
                         {message.content && (
                           <div className={`inline-block p-3 rounded-lg ${
                             message.user.email === session?.user?.email 
                               ? 'bg-blue-600 text-white' 
-                              : 'bg-gray-100 text-gray-900'
+                              : darkMode ? 'bg-gray-700 text-gray-100' : 'bg-gray-100 text-gray-900'
                           }`}>
                             <p className="whitespace-pre-wrap break-words">{message.content}</p>
                           </div>
@@ -814,7 +917,9 @@ export default function TaskDetailPage() {
 
             {/* 画像プレビュー */}
             {selectedImages.length > 0 && (
-              <div className="px-4 py-2 border-t bg-gray-50">
+              <div className={`px-4 py-2 border-t ${
+                darkMode ? 'bg-gray-700/50 border-gray-700' : 'bg-gray-50 border-gray-200'
+              }`}>
                 <div className="flex flex-wrap gap-2">
                   {selectedImages.map((image, index) => (
                     <div key={index} className="relative">
@@ -838,7 +943,7 @@ export default function TaskDetailPage() {
             {/* メッセージ入力 */}
             <div 
               className={`p-4 border-t relative ${
-                isDragging ? 'bg-blue-50 border-blue-300' : ''
+                isDragging ? (darkMode ? 'bg-blue-900/20 border-blue-700' : 'bg-blue-50 border-blue-300') : darkMode ? 'border-gray-700' : 'border-gray-200'
               }`}
               onDragOver={handleDragOver}
               onDragEnter={handleDragEnter}
@@ -846,8 +951,12 @@ export default function TaskDetailPage() {
               onDrop={handleDrop}
             >
               {isDragging && (
-                <div className="absolute inset-0 flex items-center justify-center bg-blue-50 bg-opacity-90 z-10 pointer-events-none">
-                  <div className="text-blue-600 font-medium flex items-center space-x-2">
+                <div className={`absolute inset-0 flex items-center justify-center bg-opacity-90 z-10 pointer-events-none ${
+                  darkMode ? 'bg-blue-900/90' : 'bg-blue-50'
+                }`}>
+                  <div className={`font-medium flex items-center space-x-2 ${
+                    darkMode ? 'text-blue-300' : 'text-blue-600'
+                  }`}>
                     <ImageIcon className="h-8 w-8" />
                     <span>画像をここにドロップ</span>
                   </div>
@@ -860,10 +969,18 @@ export default function TaskDetailPage() {
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                   placeholder="メッセージを入力..."
-                  className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400' 
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+                  }`}
                   disabled={sendingMessage}
                 />
-                <label className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer">
+                <label className={`p-2 cursor-pointer transition-colors ${
+                  darkMode 
+                    ? 'text-gray-400 hover:text-gray-200' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}>
                   <ImageIcon className="h-5 w-5" />
                   <input
                     ref={fileInputRef}

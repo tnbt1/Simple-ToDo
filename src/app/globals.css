@@ -124,6 +124,17 @@
                 linear-gradient(135deg, #667eea 0%, #764ba2 100%) border-box;
     border: 2px solid transparent;
   }
+
+  /* Smooth card hover effects */
+  .task-card {
+    @apply transition-all duration-300 ease-out;
+    transform: translateY(0);
+  }
+
+  .task-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  }
 }
 
 @layer utilities {
