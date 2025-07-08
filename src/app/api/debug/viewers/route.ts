@@ -4,13 +4,13 @@ import type { Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
 // Debug endpoint to check current task viewers (development only)
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   // Only allow in development
   if (process.env.NODE_ENV !== 'development') {
     return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
   }
   
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

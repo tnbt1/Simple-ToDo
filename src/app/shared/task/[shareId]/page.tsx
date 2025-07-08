@@ -8,14 +8,15 @@ import { formatDate, getDaysUntilDue } from '@/lib/utils'
 import { useSession } from 'next-auth/react'
 import ImageModal from '@/components/ImageModal'
 import { useSSE } from '@/lib/sse-client'
+import { PRIORITY, TASK_STATUS } from '@/constants'
 
 interface SharedTask {
   id: string
   title: string
   description?: string
   dueDate?: string | null
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  priority: typeof PRIORITY[keyof typeof PRIORITY]
+  status: typeof TASK_STATUS[keyof typeof TASK_STATUS]
   completed: boolean
   category?: string | null
   createdAt: string
@@ -164,9 +165,9 @@ export default function SharedTaskPage() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
-      case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-      case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
+      case PRIORITY.HIGH: return 'bg-red-50 text-red-700 border-red-200'
+      case PRIORITY.MEDIUM: return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+      case PRIORITY.LOW: return 'bg-green-50 text-green-700 border-green-200'
       default: return 'bg-gray-50 text-gray-700 border-gray-200'
     }
   }
@@ -289,7 +290,7 @@ export default function SharedTaskPage() {
 
   if (loading || status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <div className="w-12 h-12 rounded-full spinner-gradient"></div>
       </div>
     )
@@ -297,17 +298,17 @@ export default function SharedTaskPage() {
 
   if (error || !task) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center glass p-8 rounded-xl shadow-xl"
+          className="text-center bg-white p-8 rounded-xl shadow-xl"
         >
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
             タスクが見つかりません
           </h1>
-          <p className="text-gray-600 dark:text-gray-300">
+          <p className="text-gray-700">
             {error || '共有されたタスクが存在しないか、アクセス権限がありません。'}
           </p>
         </motion.div>
@@ -318,12 +319,12 @@ export default function SharedTaskPage() {
   const daysUntilDue = getDaysUntilDue(task.dueDate || null)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <div className="max-w-4xl mx-auto px-4 py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass rounded-xl shadow-2xl overflow-hidden fade-in"
+          className="bg-white rounded-xl shadow-2xl overflow-hidden fade-in"
         >
           {/* ヘッダー */}
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
@@ -336,7 +337,7 @@ export default function SharedTaskPage() {
           {/* タスク詳細 */}
           <div className="p-6 space-y-6">
             <div className="flex items-start space-x-4">
-              <div className={`mt-1 ${task.completed ? 'text-green-500' : 'text-gray-400'}`}>
+              <div className={`mt-1 ${task.completed ? 'text-green-500' : 'text-gray-500'}`}>
                 {task.completed ? (
                   <CheckCircle2 className="h-6 w-6" />
                 ) : (
@@ -347,23 +348,23 @@ export default function SharedTaskPage() {
               <div className="flex-1">
                 <div className="flex items-center space-x-3 mb-3">
                   <h2 className={`text-2xl font-semibold ${
-                    task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                    task.completed ? 'text-gray-500 line-through' : 'text-gray-800'
                   }`}>
                     {task.title}
                   </h2>
                   <span className={`px-3 py-1 text-sm font-medium rounded-full border transition-all ${
                     getPriorityColor(task.priority)
                   } ${
-                    task.priority === 'HIGH' ? 'priority-high' :
-                    task.priority === 'MEDIUM' ? 'priority-medium' : 'priority-low'
+                    task.priority === PRIORITY.HIGH ? 'priority-high' :
+                    task.priority === PRIORITY.MEDIUM ? 'priority-medium' : 'priority-low'
                   }`}>
-                    {task.priority === 'HIGH' ? '高' : task.priority === 'MEDIUM' ? '中' : '低'}
+                    {task.priority === PRIORITY.HIGH ? '高' : task.priority === PRIORITY.MEDIUM ? '中' : '低'}
                   </span>
                 </div>
 
                 {task.description && (
                   <p className={`text-lg mb-4 ${
-                    task.completed ? 'text-gray-400' : 'text-gray-600'
+                    task.completed ? 'text-gray-500' : 'text-gray-700'
                   }`}>
                     {task.description}
                   </p>
@@ -377,7 +378,7 @@ export default function SharedTaskPage() {
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-4 text-sm text-gray-500">
+                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                   {task.dueDate && (
                     <div className={`flex items-center space-x-1 ${
                       daysUntilDue !== null && daysUntilDue < 0 ? 'text-red-500' :
@@ -403,7 +404,7 @@ export default function SharedTaskPage() {
 
                 {/* ステータス表示 */}
                 <div className="mt-4 flex items-center space-x-2">
-                  <span className="text-sm text-gray-500">ステータス:</span>
+                  <span className="text-sm text-gray-600">ステータス:</span>
                   <span className={`px-3 py-1 text-sm font-medium rounded-md ${
                     task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
                     task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
@@ -412,7 +413,7 @@ export default function SharedTaskPage() {
                     {task.status === 'COMPLETED' ? '完了' :
                      task.status === 'IN_PROGRESS' ? '進行中' : '未着手'}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-500">
                     (ステータス変更は編集権限が必要です)
                   </span>
                 </div>
@@ -477,16 +478,16 @@ export default function SharedTaskPage() {
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.3 }}
-              className="mt-6 glass rounded-xl shadow-2xl overflow-hidden"
+              className="mt-6 bg-white rounded-xl shadow-2xl overflow-hidden"
             >
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-4">
+              <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
                 <h2 className="text-white text-lg font-bold">スレッド</h2>
               </div>
 
               <div className="p-6">
                 <div className="max-h-96 overflow-y-auto space-y-4 mb-4">
                   {messages.length === 0 ? (
-                    <p className="text-center text-gray-500 py-8">
+                    <p className="text-center text-gray-600 py-8">
                       まだメッセージがありません
                     </p>
                   ) : (
@@ -508,21 +509,21 @@ export default function SharedTaskPage() {
                             />
                           ) : (
                             <div className="h-8 w-8 rounded-full bg-gray-300 flex items-center justify-center">
-                              <User className="h-4 w-4 text-gray-600" />
+                              <User className="h-4 w-4 text-gray-700" />
                             </div>
                           )}
                         </div>
                         <div className={`flex-1 max-w-xs lg:max-w-md ${
                           message.user.email === session?.user?.email ? 'text-right' : ''
                         }`}>
-                          <div className="text-xs text-gray-500 mb-1">
+                          <div className="text-xs text-gray-600 mb-1">
                             {message.user.name || message.user.email} • {formatDate(message.createdAt)}
                           </div>
                           {message.content && (
                             <div className={`inline-block p-3 rounded-lg ${
                               message.user.email === session?.user?.email 
                                 ? 'bg-blue-600 text-white' 
-                                : 'bg-gray-100 text-gray-900'
+                                : 'bg-gray-100 text-gray-800'
                             }`}>
                               <p className="whitespace-pre-wrap break-words">{message.content}</p>
                             </div>
@@ -597,7 +598,7 @@ export default function SharedTaskPage() {
                       />
                       <label
                         htmlFor="thread-image-input"
-                        className="p-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                        className="p-2 text-gray-600 hover:text-gray-800 cursor-pointer"
                       >
                         <ImageIcon className="h-5 w-5" />
                       </label>

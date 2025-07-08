@@ -8,7 +8,7 @@ import { nanoid } from 'nanoid'
 // カテゴリーの共有URLを生成
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions as any) as Session | null
+    const session = await getServerSession(authOptions) as Session | null
     if (!session?.user?.email) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
@@ -38,7 +38,15 @@ export async function POST(request: NextRequest) {
     })
 
     if (existingShare) {
-      const shareUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3100'}/shared/category/${existingShare.shareId}`
+      // Get the proper base URL from request headers
+      const forwardedHost = request.headers.get('x-forwarded-host')
+      const forwardedProto = request.headers.get('x-forwarded-proto')
+      
+      const baseUrl = forwardedHost
+        ? `${forwardedProto || 'https'}://${forwardedHost}`
+        : `${request.url.split('/').slice(0, 3).join('/')}`
+      
+      const shareUrl = `${baseUrl}/shared/category/${existingShare.shareId}`
       return NextResponse.json({ shareUrl, shareId: existingShare.shareId })
     }
 
@@ -46,7 +54,7 @@ export async function POST(request: NextRequest) {
     const shareId = nanoid(10)
 
     // カテゴリー共有情報を作成
-    const sharedCategory = await prisma.sharedCategory.create({
+    const _sharedCategory = await prisma.sharedCategory.create({
       data: {
         category,
         ownerId: user.id,
@@ -67,7 +75,15 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    const shareUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3100'}/shared/category/${shareId}`
+    // Get the proper base URL from request headers
+    const forwardedHost = request.headers.get('x-forwarded-host')
+    const forwardedProto = request.headers.get('x-forwarded-proto')
+    
+    const baseUrl = forwardedHost
+      ? `${forwardedProto || 'https'}://${forwardedHost}`
+      : `${request.url.split('/').slice(0, 3).join('/')}`
+    
+    const shareUrl = `${baseUrl}/shared/category/${shareId}`
 
     return NextResponse.json({
       shareUrl,
@@ -83,7 +99,7 @@ export async function POST(request: NextRequest) {
 // カテゴリーの共有を解除
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions as any) as Session | null
+    const session = await getServerSession(authOptions) as Session | null
     if (!session?.user?.email) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }

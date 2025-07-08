@@ -8,7 +8,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ shareId: string }> }
 ) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -39,7 +39,7 @@ import { useTaskOperations } from '../hooks/useTaskOperations'
 import { useCategoryOperations } from '../hooks/useCategoryOperations'
 
 // Constants
-import { PRIORITY, TIMEOUTS } from '../constants'
+import { PRIORITY } from '../constants'
 
 export default function Home() {
   const router = useRouter()
@@ -123,11 +123,11 @@ export default function Home() {
     connectionState,
     readMessageCounts,
     setReadMessageCounts
-  } = useSSEConnection(session, tasks, setTasks, fetchTasks)
+  } = useSSEConnection(session, tasks, setTasks, fetchTasks, setShareUrls)
 
   const {
     createTask,
-    updateTask,
+    updateTask: _updateTask,
     deleteTask,
     shareTask,
     toggleTaskComplete
@@ -246,11 +246,35 @@ export default function Home() {
 
   const handleShareTask = async (taskId: string) => {
     try {
+      console.log('[Share Task] Starting share process for task:', taskId)
       setSharingTaskId(taskId)
       const shareUrl = await shareTask(taskId)
-      // URL is already set in shareTask function
-    } catch (error) {
-      console.error('Error sharing task:', error)
+      console.log('[Share Task] Share URL generated:', shareUrl)
+      
+      // 共有成功時、自動的にURLをコピー
+      if (shareUrl) {
+        try {
+          await navigator.clipboard.writeText(shareUrl)
+          // 共有URLコピー機能を使用して視覚的フィードバックを提供
+          await handleCopyShareUrl(taskId, shareUrl)
+          console.log('[Share Task] URL copied to clipboard')
+        } catch (clipboardError) {
+          console.error('[Share Task] Failed to copy URL to clipboard:', clipboardError)
+          // クリップボードへのコピーに失敗してもエラーとはしない
+        }
+      }
+      
+      setError(null) // 成功時はエラーをクリア
+    } catch (error: any) {
+      console.error('[Share Task] Error sharing task:', error)
+      // ユーザーにエラーを通知
+      const errorMessage = error.message || 'タスクの共有に失敗しました'
+      setError(errorMessage)
+      
+      // エラーメッセージを3秒後に自動的にクリア
+      setTimeout(() => {
+        setError(null)
+      }, 3000)
     } finally {
       setSharingTaskId(null)
     }
@@ -294,16 +318,16 @@ export default function Home() {
   const getPriorityColor = (priority: string) => {
     if (darkMode) {
       switch (priority) {
-        case 'HIGH': return 'bg-red-900/30 text-red-300 border-red-700/50'
-        case 'MEDIUM': return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'
-        case 'LOW': return 'bg-green-900/30 text-green-300 border-green-700/50'
+        case PRIORITY.HIGH: return 'bg-red-900/30 text-red-300 border-red-700/50'
+        case PRIORITY.MEDIUM: return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'
+        case PRIORITY.LOW: return 'bg-green-900/30 text-green-300 border-green-700/50'
         default: return 'bg-gray-700/30 text-gray-300 border-gray-600/50'
       }
     } else {
       switch (priority) {
-        case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
-        case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-        case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
+        case PRIORITY.HIGH: return 'bg-red-50 text-red-700 border-red-200'
+        case PRIORITY.MEDIUM: return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+        case PRIORITY.LOW: return 'bg-green-50 text-green-700 border-green-200'
         default: return 'bg-gray-50 text-gray-700 border-gray-200'
       }
     }
@@ -915,8 +939,8 @@ export default function Home() {
                           } ${
                             task.completed ? 'opacity-60' : ''
                           } ${
-                            task.priority === 'HIGH' ? 'priority-high' :
-                            task.priority === 'MEDIUM' ? 'priority-medium' : 'priority-low'
+                            task.priority === PRIORITY.HIGH ? 'priority-high' :
+                            task.priority === PRIORITY.MEDIUM ? 'priority-medium' : 'priority-low'
                           }`}
                         >
                           <div className="flex items-start space-x-3 sm:space-x-4">
@@ -955,7 +979,7 @@ export default function Home() {
                                   <span
                                     className={`px-2 py-1 text-xs font-medium rounded-full border flex-shrink-0 ${getPriorityColor(task.priority)}`}
                                   >
-                                    {task.priority === 'HIGH' ? '高' : task.priority === 'MEDIUM' ? '中' : '低'}
+                                    {task.priority === PRIORITY.HIGH ? '高' : task.priority === PRIORITY.MEDIUM ? '中' : '低'}
                                   </span>
                                 </div>
                                 {!groupByCategory && task.category && (
@@ -1050,7 +1074,7 @@ export default function Home() {
                               </button>
 
                               {/* 共有ボタン */}
-                              {!shareUrls[task.id] ? (
+                              {!shareUrls[task.id] && !task.shareId ? (
                                 <button
                                   onClick={() => handleShareTask(task.id)}
                                   disabled={sharingTaskId === task.id || !!task.importedFromTaskId}
@@ -1068,7 +1092,7 @@ export default function Home() {
                               ) : (
                                 <div className="flex items-center space-x-1">
                                   <button
-                                    onClick={() => handleCopyShareUrl(task.id, shareUrls[task.id])}
+                                    onClick={() => handleCopyShareUrl(task.id, shareUrls[task.id] || (task.shareId ? `${window.location.origin}/shared/task/${task.shareId}` : ''))}
                                     className={`p-2 rounded-lg transition-all ${
                                       darkMode 
                                         ? 'text-blue-400 hover:bg-gray-700' 
@@ -1297,7 +1321,12 @@ export default function Home() {
                         ) : (
                           <div className="flex items-center space-x-1">
                             <button
-                              onClick={() => handleCopyShareUrl(task.id, shareUrls[task.id])}
+                              onClick={() => {
+                                console.log('[Share Button Click - Non-grouped] taskId:', task.id, 'shareUrls:', shareUrls, 'task.shareId:', task.shareId)
+                                const shareUrl = shareUrls[task.id] || (task.shareId ? `${window.location.origin}/shared/task/${task.shareId}` : '')
+                                console.log('[Share Button Click - Non-grouped] generated shareUrl:', shareUrl)
+                                handleCopyShareUrl(task.id, shareUrl)
+                              }}
                               className={`p-2 rounded-lg transition-all ${
                                 darkMode 
                                   ? 'text-blue-400 hover:bg-gray-700' 

@@ -1,8 +1,8 @@
 // This file provides a runtime-safe logger interface that works in both Edge and Node.js environments
 // It conditionally loads the actual Winston logger only when running on the server
 
-type LogLevel = 'error' | 'warn' | 'info' | 'http' | 'debug';
-type LogMeta = Record<string, any>;
+// type LogLevel = 'error' | 'warn' | 'info' | 'http' | 'debug';
+// type LogMeta = Record<string, any>;
 
 // Helper function to check if we're in a server environment
 function isServerEnvironment(): boolean {
@@ -20,6 +20,7 @@ function getServerLogger() {
   if (!serverLogger) {
     try {
       // Dynamic import to avoid Edge Runtime issues
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       serverLogger = require('./logger-server');
     } catch (error) {
       console.error('Failed to load server logger:', error);

@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 
 // This endpoint allows clients to manually trigger a check for updates
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

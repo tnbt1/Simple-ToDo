@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     })
   }
   
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     console.log('SSE endpoint: Unauthorized')

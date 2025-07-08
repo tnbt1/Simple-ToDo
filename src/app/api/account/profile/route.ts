@@ -8,9 +8,9 @@ import { join } from 'path'
 import { nanoid } from 'nanoid'
 
 // プロフィール情報を取得
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions as any) as Session | null
+    const session = await getServerSession(authOptions) as Session | null
     if (!session?.user?.email) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
 // プロフィール情報を更新
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions as any) as Session | null
+    const session = await getServerSession(authOptions) as Session | null
     if (!session?.user?.email) {
       return NextResponse.json({ error: '認証が必要です' }, { status: 401 })
     }
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest) {
     const name = formData.get('name') as string
     const imageFile = formData.get('image') as File | null
 
-    const updateData: any = {}
+    const updateData: Record<string, string> = {}
     
     if (name !== null && name !== undefined) {
       updateData.name = name

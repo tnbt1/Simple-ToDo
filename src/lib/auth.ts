@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs"
 import { prisma } from "./prisma"
 import { logAuthEvent } from "./logger"
 
+// TODO: NextAuthの型定義を正しくインポートする
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
@@ -76,7 +77,7 @@ export const authOptions = {
     ] : []),
   ],
   session: {
-    strategy: "jwt",
+    strategy: "jwt" as const,
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   pages: {
@@ -84,7 +85,7 @@ export const authOptions = {
     signUp: "/auth/signup",
   },
   callbacks: {
-    async jwt({ token, user }: { token: any; user: any }) {
+    async jwt({ token, user }: { token: any; user?: any }) {
       if (user) {
         token.id = user.id
       }

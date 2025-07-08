@@ -27,7 +27,7 @@ export function withLogging(
     try {
       // Check authentication if required
       if (options.requireAuth || options.logAuth) {
-        const session = await getServerSession(authOptions as any) as Session | null;
+        const session = await getServerSession(authOptions) as Session | null;
         
         if (options.requireAuth && !session) {
           logAuthEvent('unauthorized_access', undefined, false, requestId, {

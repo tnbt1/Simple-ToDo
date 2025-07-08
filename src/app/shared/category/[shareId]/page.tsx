@@ -3,20 +3,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Calendar, Clock, CheckCircle2, Circle, AlertCircle, Copy, Loader2, Home, ArrowLeft } from 'lucide-react'
 import { formatDate, getDaysUntilDue } from '@/lib/utils'
-import Link from 'next/link'
+// import Link from 'next/link'
 import { useSSE } from '@/lib/sse-client'
 import { useSmartPolling } from '@/hooks/useSmartPolling'
+import { PRIORITY, TASK_STATUS } from '@/constants'
 
 interface SharedTask {
   id: string
   title: string
   description?: string
   dueDate?: string | null
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  priority: typeof PRIORITY[keyof typeof PRIORITY]
+  status: typeof TASK_STATUS[keyof typeof TASK_STATUS]
   completed: boolean
   category?: string | null
   createdAt: string
@@ -88,7 +89,7 @@ export default function SharedCategoryPage() {
     }
   }, [shareId, status])
 
-  const fetchSharedCategory = async () => {
+  const fetchSharedCategory = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/shared/category/${shareId}`)
@@ -104,7 +105,7 @@ export default function SharedCategoryPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [shareId])
 
   const importCategory = async () => {
     if (!categoryInfo || !session) return
@@ -225,7 +226,7 @@ export default function SharedCategoryPage() {
 
   // Subscribe to SSE
   const [sseConnected, setSseConnected] = useState(false)
-  const { connectionState } = useSSE((session?.user as any)?.id ? '/api/events' : '', {
+  const { connectionState: _connectionState } = useSSE((session?.user as any)?.id ? '/api/events' : '', {
     onMessage: handleSSEMessage,
     onOpen: () => setSseConnected(true),
     onError: () => setSseConnected(false)
@@ -258,9 +259,9 @@ export default function SharedCategoryPage() {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
-      case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-      case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
+      case PRIORITY.HIGH: return 'bg-red-50 text-red-700 border-red-200'
+      case PRIORITY.MEDIUM: return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+      case PRIORITY.LOW: return 'bg-green-50 text-green-700 border-green-200'
       default: return 'bg-gray-50 text-gray-700 border-gray-200'
     }
   }
@@ -279,13 +280,13 @@ export default function SharedCategoryPage() {
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center glass p-8 rounded-xl shadow-xl"
+          className="text-center bg-white p-8 rounded-xl shadow-xl"
         >
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
             カテゴリーが見つかりません
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-700">
             {error || '共有されたカテゴリーが存在しないか、アクセス権限がありません。'}
           </p>
           <button
@@ -316,7 +317,7 @@ export default function SharedCategoryPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass rounded-xl shadow-2xl overflow-hidden fade-in"
+          className="bg-white rounded-xl shadow-2xl overflow-hidden fade-in"
         >
           {/* カテゴリー情報 */}
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4">
@@ -348,7 +349,7 @@ export default function SharedCategoryPage() {
               </div>
             ) : (
               <div className="flex items-center justify-between">
-                <p className="text-gray-600">
+                <p className="text-gray-700">
                   このカテゴリーには {categoryInfo.tasks.length} 件のタスクがあります
                 </p>
                 <button
@@ -382,10 +383,10 @@ export default function SharedCategoryPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="p-4 rounded-lg border bg-white/50 backdrop-blur-sm"
+                  className="p-4 rounded-lg border bg-white"
                 >
                   <div className="flex items-start space-x-3">
-                    <div className={`mt-1 ${task.completed ? 'text-green-500' : 'text-gray-400'}`}>
+                    <div className={`mt-1 ${task.completed ? 'text-green-500' : 'text-gray-500'}`}>
                       {task.completed ? (
                         <CheckCircle2 className="h-5 w-5" />
                       ) : (
@@ -396,7 +397,7 @@ export default function SharedCategoryPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className={`font-semibold ${
-                          task.completed ? 'text-gray-500 line-through' : 'text-gray-900'
+                          task.completed ? 'text-gray-500 line-through' : 'text-gray-800'
                         }`}>
                           {task.title}
                         </h3>
@@ -417,13 +418,13 @@ export default function SharedCategoryPage() {
                       
                       {task.description && (
                         <p className={`text-sm mb-2 ${
-                          task.completed ? 'text-gray-400' : 'text-gray-600'
+                          task.completed ? 'text-gray-400' : 'text-gray-700'
                         }`}>
                           {task.description}
                         </p>
                       )}
                       
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                      <div className="flex items-center gap-4 text-xs text-gray-600">
                         {task.dueDate && (
                           <div className={`flex items-center space-x-1 ${
                             daysUntilDue !== null && daysUntilDue < 0 ? 'text-red-500' :

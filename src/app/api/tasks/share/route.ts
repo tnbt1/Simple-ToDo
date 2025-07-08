@@ -9,7 +9,7 @@ import { logSharingEvent } from '@/lib/logger'
 
 // タスクの共有URLを生成
 export const POST = withLogging(async (request: NextRequest) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   if (!session?.user?.email) {
@@ -48,7 +48,7 @@ export const POST = withLogging(async (request: NextRequest) => {
       // Get the proper base URL from request headers
       const forwardedHost = request.headers.get('x-forwarded-host')
       const forwardedProto = request.headers.get('x-forwarded-proto')
-      const host = request.headers.get('host')
+      const _host = request.headers.get('host')
       
       const baseUrl = forwardedHost
         ? `${forwardedProto || 'https'}://${forwardedHost}`
@@ -62,7 +62,7 @@ export const POST = withLogging(async (request: NextRequest) => {
     const shareId = nanoid(10)
 
     // タスクを共有可能に更新
-    const updatedTask = await prisma.task.update({
+    const _updatedTask = await prisma.task.update({
       where: { id: taskId },
       data: {
         shareId,
@@ -80,7 +80,7 @@ export const POST = withLogging(async (request: NextRequest) => {
     // Get the proper base URL from request headers
     const forwardedHost = request.headers.get('x-forwarded-host')
     const forwardedProto = request.headers.get('x-forwarded-proto')
-    const host = request.headers.get('host')
+    const _host = request.headers.get('host')
     
     const baseUrl = forwardedHost
       ? `${forwardedProto || 'https'}://${forwardedHost}`
@@ -97,7 +97,7 @@ export const POST = withLogging(async (request: NextRequest) => {
 
 // 共有を解除
 export const DELETE = withLogging(async (request: NextRequest) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   if (!session?.user?.email) {

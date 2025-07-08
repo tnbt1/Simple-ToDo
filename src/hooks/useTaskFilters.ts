@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { PRIORITY, TASK_STATUS } from '@/constants'
 
 interface Task {
   id: string
   title: string
   description?: string
   dueDate?: string | null
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  priority: typeof PRIORITY[keyof typeof PRIORITY]
+  status: typeof TASK_STATUS[keyof typeof TASK_STATUS]
   completed: boolean
   position: number
   tags: string[]
@@ -63,7 +64,7 @@ export function useTaskFilters(tasks: Task[]) {
           if (!b.dueDate) return -1
           return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
         case 'priority':
-          const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+          const priorityOrder = { [PRIORITY.HIGH]: 0, [PRIORITY.MEDIUM]: 1, [PRIORITY.LOW]: 2 }
           return priorityOrder[a.priority] - priorityOrder[b.priority]
         case 'title':
           return a.title.localeCompare(b.title)

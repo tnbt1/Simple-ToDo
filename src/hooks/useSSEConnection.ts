@@ -39,7 +39,8 @@ export function useSSEConnection(
   session: any,
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
-  fetchTasks: () => Promise<void>
+  fetchTasks: () => Promise<void>,
+  setShareUrls?: React.Dispatch<React.SetStateAction<Record<string, string>>>
 ) {
   const [sseConnected, setSseConnected] = useState(false)
   const [readMessageCounts, setReadMessageCounts] = useState<Record<string, number>>({})
@@ -103,6 +104,13 @@ export function useSSEConnection(
               return task
             })
           )
+          // Update shareUrls if task has shareId
+          if (data.task.shareId && setShareUrls) {
+            setShareUrls(prev => ({
+              ...prev,
+              [data.task.id]: `${window.location.origin}/shared/task/${data.task.shareId}`
+            }))
+          }
           break
         
         case 'task-deleted':
@@ -138,6 +146,13 @@ export function useSSEConnection(
               return task
             })
           )
+          // Update shareUrls if task has shareId
+          if (data.task.shareId && setShareUrls) {
+            setShareUrls(prev => ({
+              ...prev,
+              [data.task.id]: `${window.location.origin}/shared/task/${data.task.shareId}`
+            }))
+          }
           break
         
         case 'shared-category-task-created':

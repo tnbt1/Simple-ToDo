@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { 
   ArrowLeft, 
   Calendar, 
@@ -26,14 +26,15 @@ import { formatDate, getDaysUntilDue } from '@/lib/utils'
 import ImageModal from '@/components/ImageModal'
 import { useSSE } from '@/lib/sse-client'
 import { useDarkMode } from '@/hooks/useDarkMode'
+import { PRIORITY, TASK_STATUS } from '@/constants'
 
 interface TaskDetail {
   id: string
   title: string
   description?: string
   dueDate?: string | null
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  priority: typeof PRIORITY[keyof typeof PRIORITY]
+  status: typeof TASK_STATUS[keyof typeof TASK_STATUS]
   completed: boolean
   category?: string | null
   isShared: boolean
@@ -338,7 +339,7 @@ export default function TaskDetailPage() {
   }
 
   const saveTaskEdits = async () => {
-    console.log('saveTaskEdits called')
+    console.log('[Task Edit] saveTaskEdits called')
     if (!editForm.title.trim()) {
       setError('タイトルは必須です')
       return
@@ -347,48 +348,90 @@ export default function TaskDetailPage() {
     setIsSaving(true)
     setError(null)
 
+    // 楽観的更新: 即座にUIを閲覧モードに戻す
+    setIsEditing(false)
+    
+    // 元のタスク情報を保存（エラー時のロールバック用）
+    const originalTask = task ? { ...task } : null
+    
+    // 楽観的更新: 即座にタスクを更新
+    if (task) {
+      setTask({
+        ...task,
+        title: editForm.title.trim(),
+        description: editForm.description.trim() || undefined,
+        dueDate: editForm.dueDate || undefined,
+        priority: editForm.priority
+      })
+    }
+
+    // タイムアウト設定を追加（5秒に短縮）
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      console.error('[Task Edit] Request timeout after 5 seconds')
+      controller.abort()
+    }, 5000) // 5秒タイムアウト
+
     try {
-      console.log('Sending PUT request to:', `/api/tasks/${taskId}`)
-      console.log('Request body:', {
+      const requestBody = {
         title: editForm.title.trim(),
         description: editForm.description.trim() || null,
         dueDate: editForm.dueDate || null,
         priority: editForm.priority
-      })
+      }
+      
+      console.log('[Task Edit] Sending PUT request to:', `/api/tasks/${taskId}`)
+      console.log('[Task Edit] Request body:', requestBody)
+      
+      const startTime = Date.now()
       
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editForm.title.trim(),
-          description: editForm.description.trim() || null,
-          dueDate: editForm.dueDate || null,
-          priority: editForm.priority
-        })
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
       })
-
-      console.log('Response status:', response.status)
+      
+      clearTimeout(timeoutId)
+      
+      const responseTime = Date.now() - startTime
+      console.log(`[Task Edit] Response received in ${responseTime}ms, status:`, response.status)
       
       if (response.ok) {
         const updatedTask = await response.json()
-        console.log('Task updated successfully:', updatedTask)
+        console.log('[Task Edit] Task updated successfully:', updatedTask)
         setTask(updatedTask)
-        setIsEditing(false)
         setError(null)
+        // 既に楽観的更新でsetIsEditing(false)を実行済み
       } else {
         const errorData = await response.json()
-        console.error('Update failed:', errorData)
+        console.error('[Task Edit] Update failed:', errorData)
         setError(errorData.error || '更新に失敗しました')
+        // エラー時はロールバック
+        if (originalTask) {
+          setTask(originalTask)
+        }
+        setIsEditing(true)
       }
-    } catch (error) {
-      console.error('Failed to update task:', error)
-      setError('更新中にエラーが発生しました')
+    } catch (error: any) {
+      console.error('[Task Edit] Failed to update task:', error)
+      if (error.name === 'AbortError') {
+        setError('保存がタイムアウトしました。もう一度お試しください。')
+      } else {
+        setError('更新中にエラーが発生しました')
+      }
+      // エラー時はロールバック
+      if (originalTask) {
+        setTask(originalTask)
+      }
+      setIsEditing(true)
     } finally {
+      clearTimeout(timeoutId)
       setIsSaving(false)
     }
   }
 
-  const handleStatusChange = async (newStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
+  const handleStatusChange = async (newStatus: typeof TASK_STATUS[keyof typeof TASK_STATUS]) => {
     console.log('handleStatusChange called with status:', newStatus)
     try {
       console.log('Sending PATCH request to:', `/api/tasks/${taskId}`)
@@ -397,7 +440,7 @@ export default function TaskDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           status: newStatus,
-          completed: newStatus === 'COMPLETED'
+          completed: newStatus === TASK_STATUS.COMPLETED
         })
       })
       
@@ -473,16 +516,16 @@ export default function TaskDetailPage() {
   const getPriorityColor = (priority: string) => {
     if (darkMode) {
       switch (priority) {
-        case 'HIGH': return 'bg-red-900/30 text-red-300 border-red-700/50'
-        case 'MEDIUM': return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'
-        case 'LOW': return 'bg-green-900/30 text-green-300 border-green-700/50'
+        case PRIORITY.HIGH: return 'bg-red-900/30 text-red-300 border-red-700/50'
+        case PRIORITY.MEDIUM: return 'bg-yellow-900/30 text-yellow-300 border-yellow-700/50'
+        case PRIORITY.LOW: return 'bg-green-900/30 text-green-300 border-green-700/50'
         default: return 'bg-gray-700/30 text-gray-300 border-gray-600/50'
       }
     } else {
       switch (priority) {
-        case 'HIGH': return 'bg-red-50 text-red-700 border-red-200'
-        case 'MEDIUM': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
-        case 'LOW': return 'bg-green-50 text-green-700 border-green-200'
+        case PRIORITY.HIGH: return 'bg-red-50 text-red-700 border-red-200'
+        case PRIORITY.MEDIUM: return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+        case PRIORITY.LOW: return 'bg-green-50 text-green-700 border-green-200'
         default: return 'bg-gray-50 text-gray-700 border-gray-200'
       }
     }
@@ -586,16 +629,16 @@ export default function TaskDetailPage() {
                       {isEditing ? (
                         <select
                           value={editForm.priority}
-                          onChange={(e) => setEditForm({ ...editForm, priority: e.target.value as 'LOW' | 'MEDIUM' | 'HIGH' })}
+                          onChange={(e) => setEditForm({ ...editForm, priority: e.target.value as typeof PRIORITY[keyof typeof PRIORITY] })}
                           className={`px-3 py-1 text-sm font-medium rounded-full border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                             darkMode 
                               ? 'bg-gray-700 border-gray-600 text-gray-100' 
                               : 'bg-white border-gray-300 text-gray-900'
                           }`}
                         >
-                          <option value="HIGH">高</option>
-                          <option value="MEDIUM">中</option>
-                          <option value="LOW">低</option>
+                          <option value={PRIORITY.HIGH}>高</option>
+                          <option value={PRIORITY.MEDIUM}>中</option>
+                          <option value={PRIORITY.LOW}>低</option>
                         </select>
                       ) : (
                         <span className={`px-3 py-1 text-sm font-medium rounded-full border ${
@@ -742,7 +785,7 @@ export default function TaskDetailPage() {
                     </label>
                     <select
                       value={task.status}
-                      onChange={(e) => handleStatusChange(e.target.value as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED')}
+                      onChange={(e) => handleStatusChange(e.target.value as typeof TASK_STATUS[keyof typeof TASK_STATUS])}
                       className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                         darkMode 
                           ? 'bg-gray-700 border-gray-600 text-gray-100' 
@@ -750,9 +793,9 @@ export default function TaskDetailPage() {
                       }`}
                       disabled={task.user?.email !== session?.user?.email}
                     >
-                      <option value="PENDING">未着手</option>
-                      <option value="IN_PROGRESS">進行中</option>
-                      <option value="COMPLETED">完了</option>
+                      <option value={TASK_STATUS.PENDING}>未着手</option>
+                      <option value={TASK_STATUS.IN_PROGRESS}>進行中</option>
+                      <option value={TASK_STATUS.COMPLETED}>完了</option>
                     </select>
                     {task.user?.email !== session?.user?.email && (
                       <p className={`mt-1 text-xs ${
@@ -849,7 +892,7 @@ export default function TaskDetailPage() {
                   <p>まだメッセージがありません</p>
                 </div>
               ) : (
-                <AnimatePresence>
+                <>
                   {messages.map((message, index) => (
                     <motion.div
                       key={message.id}
@@ -910,7 +953,7 @@ export default function TaskDetailPage() {
                       </div>
                     </motion.div>
                   ))}
-                </AnimatePresence>
+                </>
               )}
               <div ref={messagesEndRef} />
             </div>

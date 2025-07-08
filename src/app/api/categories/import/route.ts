@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 import { sendEventToUser } from '@/lib/sse-manager'
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const categoryName = newCategoryName || sharedCategory.category
 
     // カテゴリーが存在しない場合は作成
-    const category = await prisma.category.upsert({
+    const _category = await prisma.category.upsert({
       where: {
         name_userId: {
           name: categoryName,

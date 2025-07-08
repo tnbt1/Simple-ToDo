@@ -5,7 +5,7 @@ import { authOptions } from '../../../lib/auth'
 import { sendEventToUser } from '../../../lib/sse-manager'
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

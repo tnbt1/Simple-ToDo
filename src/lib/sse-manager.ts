@@ -1,3 +1,5 @@
+import { debug } from './debug'
+
 // Store active connections
 // Use global to persist across hot reloads in development
 declare global {
@@ -26,7 +28,7 @@ export async function sendEventToUser(userId: string, event: any) {
   }
   
   const userClients = clients.get(userId)
-  console.log('[SSE] sendEventToUser called:', { 
+  debug.sse('sendEventToUser called:', { 
     userId, 
     eventSummary, 
     hasClient: !!userClients,
@@ -37,16 +39,26 @@ export async function sendEventToUser(userId: string, event: any) {
   
   if (userClients && userClients.length > 0) {
     const message = `data: ${JSON.stringify(event)}\n\n`
-    console.log('[SSE] Attempting to send message to', userClients.length, 'client(s) for user:', userId, 'Event type:', event.type)
+    debug.sse('Attempting to send message to', userClients.length, 'client(s) for user:', userId, 'Event type:', event.type)
     
-    // Send to all clients for this user
+    // Send to all clients for this user with timeout
     const disconnectedClients: string[] = []
     for (const client of userClients) {
       try {
-        await client.write(message)
-        console.log('[SSE] Message sent successfully to client', client.clientId, 'for user:', userId)
-      } catch (error) {
-        console.error('[SSE] Error sending message to client', client.clientId, 'for user:', userId, 'Error:', error)
+        // タイムアウトを500msに設定
+        const writePromise = client.write(message)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('SSE write timeout')), 500)
+        )
+        
+        await Promise.race([writePromise, timeoutPromise])
+        debug.sse('Message sent successfully to client', client.clientId, 'for user:', userId)
+      } catch (error: any) {
+        if (error.message === 'SSE write timeout') {
+          debug.error('[SSE] Write timeout for client', client.clientId, 'for user:', userId)
+        } else {
+          debug.error('[SSE] Error sending message to client', client.clientId, 'for user:', userId, 'Error:', error)
+        }
         disconnectedClients.push(client.clientId)
       }
     }
@@ -76,7 +88,7 @@ export async function broadcastEvent(event: any) {
     for (const client of userClients) {
       try {
         await client.write(message)
-      } catch (error) {
+      } catch (_error) {
         disconnectedClients.push(client.clientId)
       }
     }
@@ -110,8 +122,8 @@ export function registerClient(userId: string, client: { write: (data: string) =
     for (const oldClient of oldClients) {
       try {
         oldClient.close()
-      } catch (error) {
-        console.error('[SSE] Error closing old client:', error)
+      } catch (_error) {
+        console.error('[SSE] Error closing old client:', _error)
       }
     }
     userClients = userClients.slice(-2)
@@ -146,8 +158,8 @@ export function unregisterClient(userId: string, clientId?: string) {
     if (clientToRemove) {
       try {
         clientToRemove.close()
-      } catch (error) {
-        console.error('[SSE] Error closing client:', error)
+      } catch (_error) {
+        console.error('[SSE] Error closing client:', _error)
       }
     }
     
@@ -177,8 +189,8 @@ export function unregisterClient(userId: string, clientId?: string) {
     for (const client of userClients) {
       try {
         client.close()
-      } catch (error) {
-        console.error('[SSE] Error closing client:', error)
+      } catch (_error) {
+        console.error('[SSE] Error closing client:', _error)
       }
     }
     clients.delete(userId)
@@ -245,15 +257,25 @@ export async function sendEventToTaskViewers(taskId: string, event: any) {
   for (const userId of viewers) {
     const userClients = clients.get(userId)
     if (userClients && userClients.length > 0) {
-      // Send to all clients for this user
+      // Send to all clients for this user with timeout
       for (const client of userClients) {
         try {
-          await client.write(message)
+          // タイムアウトを500msに設定
+          const writePromise = client.write(message)
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('SSE write timeout')), 500)
+          )
+          
+          await Promise.race([writePromise, timeoutPromise])
           successCount++
           console.log(`[SSE] Event sent to user ${userId} (client ${client.clientId}) viewing ${taskId}`)
-        } catch (error) {
+        } catch (error: any) {
           failureCount++
-          console.error(`[SSE] Error sending to user ${userId} (client ${client.clientId}):`, error)
+          if (error.message === 'SSE write timeout') {
+            console.error(`[SSE] Write timeout for user ${userId} (client ${client.clientId})`)
+          } else {
+            console.error(`[SSE] Error sending to user ${userId} (client ${client.clientId}):`, error)
+          }
         }
       }
     } else {

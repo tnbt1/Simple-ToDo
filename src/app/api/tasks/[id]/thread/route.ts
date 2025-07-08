@@ -8,14 +8,14 @@ import { join } from 'path'
 import { nanoid } from 'nanoid'
 import { withLogging, getRequestId, createPrismaContext } from '@/lib/api-wrapper'
 import { logSharingEvent } from '@/lib/logger'
-import { sendEventToUser, sendEventToTaskViewers } from '../../../../../lib/sse-manager'
+import { sendEventToTaskViewers } from '../../../../../lib/sse-manager'
 
 // スレッドメッセージを取得
 export const GET = withLogging(async (
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   if (!session?.user?.email) {
@@ -122,7 +122,7 @@ export const POST = withLogging(async (
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   console.log('[Thread POST] ========== START ==========')

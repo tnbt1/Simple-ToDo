@@ -62,3 +62,12 @@ playwright.config.ts
 scripts-cleanup-plan.md
 test-password.js
 test-app.sh
+DEVELOPMENT_GUIDE.md
+TASK_CREATION_FIX.md
+fix-*.sh
+replace-*.sh
+*.patch
+test-*.js
+logs_old/
+dev.log
+.env.logging

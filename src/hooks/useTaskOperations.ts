@@ -115,9 +115,20 @@ export function useTaskOperations({
       setTasks(prevTasks => prevTasks.filter(task => task.id !== tempId))
       
       if (error.name === 'AbortError') {
-        throw new Error('タスクの作成がタイムアウトしました。もう一度お試しください。')
+        throw new Error('タスクの作成がタイムアウトしました（30秒）。ネットワーク接続を確認してください。')
       }
-      throw error
+      
+      // ネットワークエラーの詳細情報を提供
+      if (error.message === 'Failed to fetch') {
+        throw new Error('サーバーに接続できません。インターネット接続を確認してください。')
+      }
+      
+      // APIからのエラーメッセージがある場合はそれを使用
+      if (error.message) {
+        throw new Error(error.message)
+      }
+      
+      throw new Error('予期しないエラーが発生しました。もう一度お試しください。')
     }
   }, [setTasks])
 
@@ -177,6 +188,7 @@ export function useTaskOperations({
 
   const shareTask = useCallback(async (taskId: string) => {
     try {
+      console.log('[Share Task Hook] Sending share request for task:', taskId)
       const response = await fetch('/api/tasks/share', {
         method: 'POST',
         headers: {
@@ -185,11 +197,16 @@ export function useTaskOperations({
         body: JSON.stringify({ taskId })
       })
 
+      console.log('[Share Task Hook] Response status:', response.status)
+
       if (!response.ok) {
+        const errorData = await response.text()
+        console.error('[Share Task Hook] Error response:', errorData)
         throw new Error('タスクの共有に失敗しました')
       }
 
       const { shareId, shareUrl } = await response.json()
+      console.log('[Share Task Hook] Share response:', { shareId, shareUrl })
       
       setShareUrls(prev => ({ ...prev, [taskId]: shareUrl }))
       
@@ -202,6 +219,7 @@ export function useTaskOperations({
 
       return shareUrl
     } catch (error) {
+      console.error('[Share Task Hook] Error in shareTask:', error)
       setError('タスクの共有に失敗しました')
       throw error
     }

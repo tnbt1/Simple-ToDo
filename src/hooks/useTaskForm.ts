@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { PRIORITY } from '@/constants'
 
 export function useTaskForm() {
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
-  const [priority, setPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH'>('MEDIUM')
+  const [priority, setPriority] = useState<typeof PRIORITY[keyof typeof PRIORITY]>(PRIORITY.MEDIUM)
   const [category, setCategory] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false)
@@ -17,7 +18,7 @@ export function useTaskForm() {
     setTitle('')
     setDescription('')
     setDueDate('')
-    setPriority('MEDIUM')
+    setPriority(PRIORITY.MEDIUM)
     setCategory('')
     setNewCategory('')
     setShowNewCategoryInput(false)

@@ -4,15 +4,17 @@ import type { Session } from "next-auth"
 import { authOptions } from "../../../lib/auth"
 import { prisma } from "../../../lib/prisma"
 import { withLogging, getRequestId, createPrismaContext } from "../../../lib/api-wrapper"
-import { logDatabaseQuery } from "../../../lib/logger"
 import { sendEventToUser, sendEventToTaskViewers } from "../../../lib/sse-manager"
+import { PRIORITY, TASK_STATUS } from "../../../constants"
+import { debug } from "../../../lib/debug"
+import { createAuthErrorResponse } from "../../../lib/error-handler"
 
 export const GET = withLogging(async (request: NextRequest) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return createAuthErrorResponse('認証が必要です', requestId)
   }
 
   const tasks = await prisma.task.findMany({
@@ -54,15 +56,15 @@ export const GET = withLogging(async (request: NextRequest) => {
 }, { requireAuth: true, logAuth: true })
 
 export const POST = withLogging(async (request: NextRequest) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   const requestId = getRequestId(request)
   
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return createAuthErrorResponse('認証が必要です', requestId)
   }
 
   // Verify user exists in database
-  console.log('Session user ID:', session.user.id)
+  debug.auth('Session user ID:', session.user.id)
   const userExists = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { id: true },
@@ -70,16 +72,16 @@ export const POST = withLogging(async (request: NextRequest) => {
   })
 
   if (!userExists) {
-    console.error('User not found in database:', session.user.id)
+    debug.error('User not found in database:', session.user.id)
     return NextResponse.json({ error: "Invalid session - user not found" }, { status: 401 })
   }
 
   const body = await request.json()
   const { title, description, dueDate, priority, status, tags, category, importedFromTaskId, importedFromUserId, originalUniqueId } = body
 
-  console.log('Creating task with originalUniqueId:', originalUniqueId)
-  console.log('Full request body:', JSON.stringify(body, null, 2))
-  console.log('User ID for task creation:', session.user.id)
+  debug.api('POST', '/api/tasks', 'Creating task with originalUniqueId:', originalUniqueId)
+  debug.api('POST', '/api/tasks', 'Full request body:', JSON.stringify(body, null, 2))
+  debug.api('POST', '/api/tasks', 'User ID for task creation:', session.user.id)
 
   // Validate required fields
   if (!title || title.trim().length === 0) {
@@ -87,12 +89,12 @@ export const POST = withLogging(async (request: NextRequest) => {
   }
 
   // Validate priority
-  if (priority && !['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
+  if (priority && !Object.values(PRIORITY).includes(priority)) {
     return NextResponse.json({ error: "Invalid priority value" }, { status: 400 })
   }
 
   // Validate status
-  if (status && !['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(status)) {
+  if (status && !Object.values(TASK_STATUS).includes(status)) {
     return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
   }
 
@@ -116,7 +118,7 @@ export const POST = withLogging(async (request: NextRequest) => {
     })
 
     if (existingTask) {
-      console.log('Duplicate task found:', existingTask.id, existingTask.title)
+      debug.db('Duplicate task found:', existingTask.id, existingTask.title)
       return NextResponse.json({ 
         error: "このタスクは既にインポートされています", 
         existingTask 
@@ -137,7 +139,7 @@ export const POST = withLogging(async (request: NextRequest) => {
     })
 
     if (duplicateByTitle) {
-      console.log('Duplicate by title/category found:', duplicateByTitle.id)
+      debug.db('Duplicate by title/category found:', duplicateByTitle.id)
       return NextResponse.json({ 
         error: "同じタイトルとカテゴリーのタスクが既に存在します", 
         existingTask: duplicateByTitle 
@@ -162,7 +164,7 @@ export const POST = withLogging(async (request: NextRequest) => {
   if (category && category.trim()) {
     try {
       // カテゴリーが存在しない場合は作成
-      console.log('Upserting category:', category.trim(), 'for user:', session.user.id)
+      debug.db('Upserting category:', category.trim(), 'for user:', session.user.id)
       await prisma.category.upsert({
         where: {
           name_userId: {
@@ -177,11 +179,11 @@ export const POST = withLogging(async (request: NextRequest) => {
         },
         ...createPrismaContext(requestId)
       })
-      console.log('Category upserted successfully')
+      debug.db('Category upserted successfully')
     } catch (error) {
-      console.error('Error upserting category:', error)
-      console.error('Category:', category.trim())
-      console.error('User ID:', session.user.id)
+      debug.error('Error upserting category:', error)
+      debug.error('Category:', category.trim())
+      debug.error('User ID:', session.user.id)
       return NextResponse.json({ 
         error: "Failed to create/update category", 
         details: error instanceof Error ? error.message : "Unknown error" 
@@ -194,8 +196,8 @@ export const POST = withLogging(async (request: NextRequest) => {
       title: title.trim(),
       description: description ? description.trim() : null,
       dueDate: parsedDueDate,
-      priority: priority || 'MEDIUM',
-      status: status || 'PENDING',
+      priority: priority || PRIORITY.MEDIUM,
+      status: status || TASK_STATUS.PENDING,
       tags: Array.isArray(tags) ? tags : [],
       category: category && category.trim() ? category.trim() : null,
       userId: session.user.id,
@@ -231,26 +233,26 @@ export const POST = withLogging(async (request: NextRequest) => {
   })
 
   // Send real-time update
-  console.log('[Task Create] Sending task-created event to owner:', session.user.id)
+  debug.sse('[Task Create] Sending task-created event to owner:', session.user.id)
   await sendEventToUser(session.user.id, {
     type: 'task-created',
     task
   })
-  console.log('[Task Create] Task-created event sent to owner successfully')
+  debug.sse('[Task Create] Task-created event sent to owner successfully')
 
   // Send update to all users viewing tasks in this category
   if (task.category) {
-    console.log('[Task Create] Sending updates to category viewers for category:', task.category)
+    debug.sse('[Task Create] Sending updates to category viewers for category:', task.category)
     await sendEventToTaskViewers(`category:${task.category}`, {
       type: 'task-created',
       task
     })
-    console.log('[Task Create] Updates sent to category viewers')
+    debug.sse('[Task Create] Updates sent to category viewers')
   }
 
   // Check if this category is shared and notify shared users
   if (task.category) {
-    console.log(`[Task Create] Checking shared categories for category '${task.category}' owned by user ${session.user.id}`)
+    debug.sse(`[Task Create] Checking shared categories for category '${task.category}' owned by user ${session.user.id}`)
     
     const sharedCategories = await prisma.sharedCategory.findMany({
       where: {
@@ -264,45 +266,45 @@ export const POST = withLogging(async (request: NextRequest) => {
       ...createPrismaContext(requestId)
     })
 
-    console.log(`[Task Create] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
+    debug.sse(`[Task Create] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
     sharedCategories.forEach(share => {
-      console.log(`[Task Create] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
+      debug.sse(`[Task Create] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
     })
     
     // Notify all users who have this category shared with them
     for (const share of sharedCategories) {
       try {
-        console.log(`[Task Create] Sending shared-category-task-created event to user ${share.sharedWithId}`)
+        debug.sse(`[Task Create] Sending shared-category-task-created event to user ${share.sharedWithId}`)
         await sendEventToUser(share.sharedWithId, {
           type: 'shared-category-task-created',
           task
         })
-        console.log(`[Task Create] Successfully sent shared-category-task-created event to user ${share.sharedWithId}`)
+        debug.sse(`[Task Create] Successfully sent shared-category-task-created event to user ${share.sharedWithId}`)
 
         // Also send category-task-added event with shareId for the shared category page
-        console.log(`[Task Create] Sending category-task-added event to user ${share.sharedWithId} with shareId ${share.shareId}`)
+        debug.sse(`[Task Create] Sending category-task-added event to user ${share.sharedWithId} with shareId ${share.shareId}`)
         await sendEventToUser(share.sharedWithId, {
           type: 'category-task-added',
           shareId: share.shareId,
           task
         })
-        console.log(`[Task Create] Successfully sent category-task-added event to user ${share.sharedWithId}`)
+        debug.sse(`[Task Create] Successfully sent category-task-added event to user ${share.sharedWithId}`)
         
         // Also send to viewers of this specific shared category page
-        console.log(`[Task Create] Broadcasting to viewers of share:${share.shareId}`)
+        debug.sse(`[Task Create] Broadcasting to viewers of share:${share.shareId}`)
         await sendEventToTaskViewers(`share:${share.shareId}`, {
           type: 'category-task-added',
           shareId: share.shareId,
           task
         })
       } catch (error) {
-        console.error(`[Task Create] Error sending events to user ${share.sharedWithId}:`, error)
+        debug.error(`[Task Create] Error sending events to user ${share.sharedWithId}:`, error)
       }
     }
     
     // Also broadcast to anyone viewing this specific shared category page
     for (const share of sharedCategories) {
-      console.log(`[Task Create] Broadcasting to viewers of shared category ${share.shareId}`)
+      debug.sse(`[Task Create] Broadcasting to viewers of shared category ${share.shareId}`)
       await sendEventToTaskViewers(`share:${share.shareId}`, {
         type: 'category-task-added',
         shareId: share.shareId,

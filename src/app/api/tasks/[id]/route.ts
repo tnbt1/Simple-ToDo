@@ -6,11 +6,129 @@ import { prisma } from "../../../../lib/prisma"
 import { sendEventToUser, sendEventToTaskViewers } from "../../../../lib/sse-manager"
 import { withLogging } from "../../../../lib/api-wrapper"
 
+// Helper function to send task update events in parallel
+async function sendTaskUpdateEvents(
+  task: any,
+  sessionUserId: string,
+  prisma: any
+) {
+  try {
+    const eventPromises = []
+    
+    // Send to task owner
+    eventPromises.push(
+      sendEventToUser(sessionUserId, {
+        type: 'task-updated',
+        task
+      }).catch(_error => {
+        debug.error('[Task Update] Error sending to owner:', _error)
+      })
+    )
+    
+    // Send to task viewers
+    eventPromises.push(
+      sendEventToTaskViewers(task.id, {
+        type: 'task-updated',
+        task
+      }).catch(_error => {
+        debug.error('[Task Update] Error sending to task viewers:', _error)
+      })
+    )
+
+    // If task is shared, send updates to all shared users
+    if (task.isShared) {
+      // Fetch shared users in parallel
+      const sharedWithPromise = prisma.sharedTask.findMany({
+        where: { taskId: task.id },
+        select: { sharedWithId: true }
+      }).catch((error: any) => {
+        debug.error('[Task Update] Error fetching shared users:', error)
+        return []
+      })
+      
+      const sharedWith = await sharedWithPromise
+      
+      // Add shared user notifications to promises
+      sharedWith.forEach((share: any) => {
+        eventPromises.push(
+          sendEventToUser(share.sharedWithId, {
+            type: 'shared-task-updated',
+            task
+          }).catch(_error => {
+            debug.error(`[Task Update] Error sending to shared user ${share.sharedWithId}:`, _error)
+          })
+        )
+      })
+    }
+
+    // Check if this category is shared and notify shared users
+    if (task.category) {
+      // Fetch shared categories in parallel
+      const sharedCategoriesPromise = prisma.sharedCategory.findMany({
+        where: {
+          category: task.category,
+          ownerId: sessionUserId
+        },
+        select: {
+          shareId: true,
+          sharedWithId: true
+        }
+      }).catch((error: any) => {
+        debug.error('[Task Update] Error fetching shared categories:', error)
+        return []
+      })
+      
+      const sharedCategories = await sharedCategoriesPromise
+      
+      // Add category notifications to promises
+      sharedCategories.forEach((share: any) => {
+        eventPromises.push(
+          sendEventToUser(share.sharedWithId, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          }).catch(_error => {
+            debug.error(`[Task Update] Error sending category update to user ${share.sharedWithId}:`, _error)
+          })
+        )
+        
+        eventPromises.push(
+          sendEventToTaskViewers(`share:${share.shareId}`, {
+            type: 'category-task-updated',
+            shareId: share.shareId,
+            task
+          }).catch(_error => {
+            debug.error(`[Task Update] Error broadcasting to share viewers:`, _error)
+          })
+        )
+      })
+    }
+    
+    // Execute all event notifications in parallel with reasonable timeout
+    const timeoutPromise = new Promise((resolve) => 
+      setTimeout(() => {
+        debug.warn('[Task Update] Event notifications timeout after 500ms')
+        resolve('timeout')
+      }, 500)
+    )
+    
+    // Use Promise.race but don't throw on timeout
+    await Promise.race([
+      Promise.allSettled(eventPromises).then(() => 'completed'),
+      timeoutPromise
+    ])
+  } catch (error) {
+    debug.error('[Task Update] Unexpected error in sendTaskUpdateEvents:', error)
+  }
+}
+import { PRIORITY, TASK_STATUS } from "../../../../constants"
+import { debug } from "../../../../lib/debug"
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -94,7 +212,10 @@ export const PUT = withLogging(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const startTime = Date.now()
+  debug.api('PUT', `/api/tasks/[id]`, 'Start')
+  
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -104,6 +225,8 @@ export const PUT = withLogging(async (
     const { id } = await params
     const body = await request.json()
     const { title, description, dueDate, priority, status, completed, position, tags, category } = body
+    
+    debug.api('PUT', `/api/tasks/${id}`, 'Body:', body, 'User:', session.user.id)
 
     // Validate title if provided
     if (title !== undefined && (!title || title.trim().length === 0)) {
@@ -111,12 +234,12 @@ export const PUT = withLogging(async (
     }
 
     // Validate priority if provided
-    if (priority !== undefined && !['LOW', 'MEDIUM', 'HIGH'].includes(priority)) {
+    if (priority !== undefined && !Object.values(PRIORITY).includes(priority)) {
       return NextResponse.json({ error: "Invalid priority value" }, { status: 400 })
     }
 
     // Validate status if provided
-    if (status !== undefined && !['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(status)) {
+    if (status !== undefined && !Object.values(TASK_STATUS).includes(status)) {
       return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
     }
 
@@ -145,6 +268,9 @@ export const PUT = withLogging(async (
     if (category !== undefined) updateData.category = category && category.trim() ? category.trim() : null
 
     // First update the task
+    debug.api('PUT', `/api/tasks/${id}`, 'Updating task with data:', updateData)
+    const updateStartTime = Date.now()
+    
     await prisma.task.update({
       where: {
         id,
@@ -152,8 +278,11 @@ export const PUT = withLogging(async (
       },
       data: updateData
     })
+    
+    debug.api('PUT', `/api/tasks/${id}`, `Task updated in ${Date.now() - updateStartTime}ms`)
 
     // Then fetch the complete updated task with all relations
+    const fetchStartTime = Date.now()
     const task = await prisma.task.findFirst({
       where: {
         id,
@@ -212,86 +341,25 @@ export const PUT = withLogging(async (
     if (!task) {
       return NextResponse.json({ error: "Task not found after update" }, { status: 404 })
     }
+    
+    debug.api('PUT', `/api/tasks/${id}`, `Task fetched in ${Date.now() - fetchStartTime}ms`)
 
-    // Send real-time update to task owner
-    console.log('[Task Update] Sending task-updated event to owner:', session.user.id)
-    await sendEventToUser(session.user.id, {
-      type: 'task-updated',
-      task
+    debug.api('PUT', `/api/tasks/${id}`, `Total request time: ${Date.now() - startTime}ms`)
+    
+    // Send events in background without blocking response
+    setImmediate(() => {
+      const eventStartTime = Date.now()
+      sendTaskUpdateEvents(task, session.user.id, prisma)
+        .then(() => {
+          debug.api('PUT', `/api/tasks/${id}`, `Events sent in ${Date.now() - eventStartTime}ms (async)`)
+        })
+        .catch((error) => {
+          // Log error but don't fail the request
+          debug.error('[Task Update] Error sending events:', error)
+        })
     })
-    console.log('[Task Update] Task-updated event sent to owner successfully')
 
-    // Send update to all users viewing this task
-    console.log('[Task Update] Sending updates to all task viewers for task:', task.id)
-    await sendEventToTaskViewers(task.id, {
-      type: 'task-updated',
-      task
-    })
-
-    // If task is shared, send updates to all shared users
-    if (task.isShared) {
-      const sharedWith = await prisma.sharedTask.findMany({
-        where: { taskId: task.id },
-        select: { sharedWithId: true }
-      })
-      
-      console.log(`[Task Update] Sending shared-task-updated to ${sharedWith.length} shared users`)
-      for (const share of sharedWith) {
-        try {
-          console.log(`[Task Update] Sending shared-task-updated event to user ${share.sharedWithId}`)
-          await sendEventToUser(share.sharedWithId, {
-            type: 'shared-task-updated',
-            task
-          })
-          console.log(`[Task Update] Successfully sent shared-task-updated event to user ${share.sharedWithId}`)
-        } catch (error) {
-          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
-        }
-      }
-    }
-
-    // Check if this category is shared and notify shared users
-    if (task.category) {
-      const sharedCategories = await prisma.sharedCategory.findMany({
-        where: {
-          category: task.category,
-          ownerId: session.user.id
-        },
-        select: {
-          shareId: true,
-          sharedWithId: true
-        }
-      })
-
-      console.log(`[Task Update] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
-      sharedCategories.forEach(share => {
-        console.log(`[Task Update] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
-      })
-      
-      // Notify all users who have this category shared with them
-      for (const share of sharedCategories) {
-        try {
-          console.log(`[Task Update] Sending category-task-updated event to user ${share.sharedWithId} with shareId ${share.shareId}`)
-          await sendEventToUser(share.sharedWithId, {
-            type: 'category-task-updated',
-            shareId: share.shareId,
-            task
-          })
-          console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
-          
-          // Also send to viewers of this specific shared category page
-          console.log(`[Task Update] Broadcasting to viewers of share:${share.shareId}`)
-          await sendEventToTaskViewers(`share:${share.shareId}`, {
-            type: 'category-task-updated',
-            shareId: share.shareId,
-            task
-          })
-        } catch (error) {
-          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
-        }
-      }
-    }
-
+    // Return response immediately
     return NextResponse.json(task)
   } catch (error: unknown) {
     console.error("Error updating task:", error)
@@ -309,7 +377,7 @@ export const PATCH = withLogging(async (
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -321,7 +389,7 @@ export const PATCH = withLogging(async (
     const { status, completed } = body
 
     // Validate status if provided
-    if (status !== undefined && !['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(status)) {
+    if (status !== undefined && !Object.values(TASK_STATUS).includes(status)) {
       return NextResponse.json({ error: "Invalid status value" }, { status: 400 })
     }
 
@@ -397,85 +465,16 @@ export const PATCH = withLogging(async (
       return NextResponse.json({ error: "Task not found after update" }, { status: 404 })
     }
 
-    // Send real-time update to task owner
-    console.log('[Task Update] Sending task-updated event to owner:', session.user.id)
-    await sendEventToUser(session.user.id, {
-      type: 'task-updated',
-      task
-    })
-    console.log('[Task Update] Task-updated event sent to owner successfully')
-
-    // Send update to all users viewing this task
-    console.log('[Task Update] Sending updates to all task viewers for task:', task.id)
-    await sendEventToTaskViewers(task.id, {
-      type: 'task-updated',
-      task
+    // Send events in background without blocking response
+    setImmediate(() => {
+      sendTaskUpdateEvents(task, session.user.id, prisma)
+        .catch((error) => {
+          // Log error but don't fail the request
+          debug.error('[Task Update] Error sending events:', error)
+        })
     })
 
-    // If task is shared, send updates to all shared users
-    if (task.isShared) {
-      const sharedWith = await prisma.sharedTask.findMany({
-        where: { taskId: task.id },
-        select: { sharedWithId: true }
-      })
-      
-      console.log(`[Task Update] Sending shared-task-updated to ${sharedWith.length} shared users`)
-      for (const share of sharedWith) {
-        try {
-          console.log(`[Task Update] Sending shared-task-updated event to user ${share.sharedWithId}`)
-          await sendEventToUser(share.sharedWithId, {
-            type: 'shared-task-updated',
-            task
-          })
-          console.log(`[Task Update] Successfully sent shared-task-updated event to user ${share.sharedWithId}`)
-        } catch (error) {
-          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
-        }
-      }
-    }
-
-    // Check if this category is shared and notify shared users
-    if (task.category) {
-      const sharedCategories = await prisma.sharedCategory.findMany({
-        where: {
-          category: task.category,
-          ownerId: session.user.id
-        },
-        select: {
-          shareId: true,
-          sharedWithId: true
-        }
-      })
-
-      console.log(`[Task Update] Found ${sharedCategories.length} shared category entries for category '${task.category}'`)
-      sharedCategories.forEach(share => {
-        console.log(`[Task Update] - Share ID: ${share.shareId}, Shared with user: ${share.sharedWithId}`)
-      })
-      
-      // Notify all users who have this category shared with them
-      for (const share of sharedCategories) {
-        try {
-          console.log(`[Task Update] Sending category-task-updated event to user ${share.sharedWithId} with shareId ${share.shareId}`)
-          await sendEventToUser(share.sharedWithId, {
-            type: 'category-task-updated',
-            shareId: share.shareId,
-            task
-          })
-          console.log(`[Task Update] Successfully sent category-task-updated event to user ${share.sharedWithId}`)
-          
-          // Also send to viewers of this specific shared category page
-          console.log(`[Task Update] Broadcasting to viewers of share:${share.shareId}`)
-          await sendEventToTaskViewers(`share:${share.shareId}`, {
-            type: 'category-task-updated',
-            shareId: share.shareId,
-            task
-          })
-        } catch (error) {
-          console.error(`[Task Update] Error sending event to user ${share.sharedWithId}:`, error)
-        }
-      }
-    }
-
+    // Return response immediately
     return NextResponse.json(task)
   } catch (error: unknown) {
     console.error("Error updating task status:", error)
@@ -490,7 +489,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions as any) as Session | null
+  const session = await getServerSession(authOptions) as Session | null
   
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
