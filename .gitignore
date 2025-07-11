@@ -71,3 +71,6 @@ test-*.js
 logs_old/
 dev.log
 .env.logging
+
+# Test logs
+test_log/

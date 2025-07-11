@@ -377,7 +377,7 @@ export default function Home() {
               <h1 className={`text-base sm:text-xl font-bold ${
                 darkMode ? 'text-white' : 'text-gray-900'
               }`}>
-                ✨ <span className="hidden sm:inline text-gradient">Simple ToDo</span>
+                <span className="hidden sm:inline text-gradient">Simple ToDo</span>
                 <span className="sm:hidden text-gradient">ToDo</span>
               </h1>
               <div className="relative hidden sm:block">
